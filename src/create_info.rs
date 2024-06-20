@@ -1,5 +1,4 @@
 use std::ffi::CString;
-use ash::vk;
 
 pub struct VustCreateInfo {
     pub(super) app_name: CString,
@@ -7,15 +6,35 @@ pub struct VustCreateInfo {
 
     pub(super) enabled_extensions: Vec<CString>,
 
+    pub(super) choose_physical_device: fn(PhysicalDevice) -> bool
+}
+
+pub struct PhysicalDevice {
+    pub name: String,
+    pub device_type: PhysicalDeviceType
+}
+
+pub enum PhysicalDeviceType {
+    Discrete,
+    Integrated,
+    NotSupported
 }
 
 impl Default for VustCreateInfo {
     fn default() -> Self {
         Self {
             app_name: CString::new("Vust App").unwrap(),
-            app_version: vk::make_api_version(0, 1, 0, 0),
+            app_version: super::make_api_version(0, 1, 0, 0),
     
-            enabled_extensions: Vec::new()
+            enabled_extensions: Vec::new(),
+
+            choose_physical_device: |physical_device| {
+                match physical_device.device_type {
+                    PhysicalDeviceType::Discrete => true,
+                    PhysicalDeviceType::Integrated => true,
+                    PhysicalDeviceType::NotSupported => false
+                }
+            }
         }
     }
 }
@@ -34,5 +53,9 @@ impl VustCreateInfo {
     pub fn with_extensions(mut self, extensions: Vec<impl Into<Vec<u8>>>) -> Self {
         self.enabled_extensions = extensions.into_iter().map(|ext| CString::new(ext).unwrap()).collect();
         self
+    }
+
+    pub fn with_choose_physical_device(mut self, choose_physical_device: fn(PhysicalDevice) -> bool) {
+        self.choose_physical_device = choose_physical_device;
     }
 }

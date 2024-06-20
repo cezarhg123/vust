@@ -3,12 +3,19 @@ pub mod create_info;
 // expose the make_api_version function
 pub use ash::vk::make_api_version;
 use std::ffi::{CStr, CString};
-use ash::vk;
+use ash::{extensions, vk};
 use create_info::VustCreateInfo;
 
 pub struct Vust {
     entry: ash::Entry,
-    instance: ash::Instance
+    instance: ash::Instance,
+
+    #[cfg(debug_assertions)]
+    debug_utils_loader: extensions::ext::DebugUtils,
+    #[cfg(debug_assertions)]
+    debug_utils_messenger: vk::DebugUtilsMessengerEXT,
+
+    physical_device: vk::PhysicalDevice
 }
 
 impl Vust {
@@ -38,7 +45,7 @@ impl Vust {
                     // only enable debug utils in debug build
                     create_info.enabled_extensions.push(CString::new("VK_EXT_debug_utils").unwrap());
                     
-                    println!("Enabled Instance Extensions: ");
+                    println!("enabled instance extensions: ");
                     for ext in &create_info.enabled_extensions {
                         println!("\t{}", ext.to_str().unwrap());
                     }
@@ -57,12 +64,91 @@ impl Vust {
                 entry.create_instance(&instance_info, None).unwrap()
             };
             #[cfg(debug_assertions)]
-            println!("Created Vulkan Instance");
+            println!("created vulkan instance");
+
+            #[cfg(debug_assertions)]
+            let (debug_utils_loader, debug_utils_messenger) = {
+                let debug_utils_loader = extensions::ext::DebugUtils::new(&entry, &instance);
+                let debug_utils_messenger = debug_utils_loader
+                    .create_debug_utils_messenger(&vk::DebugUtilsMessengerCreateInfoEXT::builder()
+                    .message_severity(
+                        vk::DebugUtilsMessageSeverityFlagsEXT::ERROR |
+                        vk::DebugUtilsMessageSeverityFlagsEXT::WARNING |
+                        vk::DebugUtilsMessageSeverityFlagsEXT::INFO |
+                        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
+                    )
+                    .message_type(
+                        vk::DebugUtilsMessageTypeFlagsEXT::GENERAL |
+                        vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE |
+                        vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                    )
+                    .pfn_user_callback(Some(Vust::vulkan_debug_callback))
+                    .build(), None)
+                    .unwrap();
+
+                println!("created vulkan debug utils messenger");
+                (debug_utils_loader, debug_utils_messenger)
+            };
+
+            let physical_devices = instance.enumerate_physical_devices().unwrap();
+            let physical_device = physical_devices.into_iter().find(|physical_device| {
+                let properties = instance.get_physical_device_properties(*physical_device);
+
+                let physical_device_info = create_info::PhysicalDevice {
+                    name: CStr::from_ptr(properties.device_name.as_ptr()).to_str().unwrap().to_string(),
+                    device_type: match properties.device_type {
+                        vk::PhysicalDeviceType::DISCRETE_GPU => create_info::PhysicalDeviceType::Discrete,
+                        vk::PhysicalDeviceType::INTEGRATED_GPU => create_info::PhysicalDeviceType::Integrated,
+                        _ => create_info::PhysicalDeviceType::NotSupported
+                    }
+                };
+
+                (create_info.choose_physical_device)(physical_device_info)
+            }).unwrap();
+
+            #[cfg(debug_assertions)]
+            println!("using physical device: {}", CStr::from_ptr(instance.get_physical_device_properties(physical_device).device_name.as_ptr()).to_str().unwrap());
 
             Self {
                 entry,
-                instance
+                instance,
+
+                #[cfg(debug_assertions)]
+                debug_utils_loader,
+                #[cfg(debug_assertions)]
+                debug_utils_messenger,
+
+                physical_device
             }
         }
+    }
+
+    /// yoinked from ash examples
+    unsafe extern "system" fn vulkan_debug_callback(
+        message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
+        message_type: vk::DebugUtilsMessageTypeFlagsEXT,
+        p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+        _user_data: *mut std::os::raw::c_void,
+    ) -> vk::Bool32 {
+        let callback_data = *p_callback_data;
+        let message_id_number = callback_data.message_id_number;
+
+        let message_id_name = if callback_data.p_message_id_name.is_null() {
+            std::borrow::Cow::from("")
+        } else {
+            std::ffi::CStr::from_ptr(callback_data.p_message_id_name).to_string_lossy()
+        };
+
+        let message = if callback_data.p_message.is_null() {
+            std::borrow::Cow::from("")
+        } else {
+            std::ffi::CStr::from_ptr(callback_data.p_message).to_string_lossy()
+        };
+
+        println!(
+            "{message_severity:?}:\n{message_type:?} [{message_id_name} ({message_id_number})] : {message}\n",
+        );
+
+        vk::FALSE
     }
 }
