@@ -4,14 +4,33 @@ pub struct VustCreateInfo {
     pub(super) app_name: CString,
     pub(super) app_version: u32,
 
-    pub(super) enabled_extensions: Vec<CString>,
+    pub(super) enabled_instance_extensions: Vec<CString>,
 
-    pub(super) choose_physical_device: fn(PhysicalDevice) -> bool
+    pub(super) choose_physical_device: fn(PhysicalDevice) -> bool,
+
+    pub(super) surface_create_info: SurfaceCreateInfo
 }
 
 pub struct PhysicalDevice {
     pub name: String,
     pub device_type: PhysicalDeviceType
+}
+
+pub enum SurfaceCreateInfo {
+    Win32 {
+        hinstance: *const std::ffi::c_void,
+        hwnd: *const std::ffi::c_void
+    },
+    None
+}
+
+impl SurfaceCreateInfo {
+    pub fn into_win32(self) -> (*const std::ffi::c_void, *const std::ffi::c_void) {
+        match self {
+            SurfaceCreateInfo::Win32 { hinstance, hwnd } => (hinstance, hwnd),
+            _ => panic!("surface create info is not win32")
+        }
+    }
 }
 
 pub enum PhysicalDeviceType {
@@ -26,15 +45,16 @@ impl Default for VustCreateInfo {
             app_name: CString::new("Vust App").unwrap(),
             app_version: super::make_api_version(0, 1, 0, 0),
     
-            enabled_extensions: Vec::new(),
+            enabled_instance_extensions: Vec::new(),
 
             choose_physical_device: |physical_device| {
                 match physical_device.device_type {
-                    PhysicalDeviceType::Discrete => true,
-                    PhysicalDeviceType::Integrated => true,
+                    PhysicalDeviceType::Discrete | PhysicalDeviceType::Integrated => true,
                     PhysicalDeviceType::NotSupported => false
                 }
-            }
+            },
+
+            surface_create_info: SurfaceCreateInfo::None
         }
     }
 }
@@ -51,11 +71,16 @@ impl VustCreateInfo {
     }
 
     pub fn with_extensions(mut self, extensions: Vec<impl Into<Vec<u8>>>) -> Self {
-        self.enabled_extensions = extensions.into_iter().map(|ext| CString::new(ext).unwrap()).collect();
+        self.enabled_instance_extensions = extensions.into_iter().map(|ext| CString::new(ext).unwrap()).collect();
         self
     }
 
     pub fn with_choose_physical_device(mut self, choose_physical_device: fn(PhysicalDevice) -> bool) {
         self.choose_physical_device = choose_physical_device;
+    }
+
+    pub fn with_surface_create_info(mut self, surface_create_info: SurfaceCreateInfo) -> Self {
+        self.surface_create_info = surface_create_info;
+        self
     }
 }

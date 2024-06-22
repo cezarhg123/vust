@@ -1,5 +1,8 @@
+use std::ptr::null;
+
 use glfw::fail_on_errors;
 use vust::{create_info::VustCreateInfo, Vust};
+use winapi::um::libloaderapi::GetModuleHandleW;
 
 #[test]
 fn triangle() {
@@ -12,7 +15,13 @@ fn triangle() {
     let vust_create_info = VustCreateInfo::default()
         .with_app_name("Vust Triangle Test")
         .with_app_version(vust::make_api_version(0, 0, 1, 0))
-        .with_extensions(glfw.get_required_instance_extensions().unwrap());
+        .with_extensions(glfw.get_required_instance_extensions().unwrap())
+        .with_surface_create_info(
+            vust::create_info::SurfaceCreateInfo::Win32 {
+                hinstance: unsafe { GetModuleHandleW(null()).cast() },
+                hwnd: window.get_win32_window()
+            }
+        );
 
     let vust = Vust::new(vust_create_info);
 
