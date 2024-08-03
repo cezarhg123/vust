@@ -1,7 +1,9 @@
 pub mod create_info;
+pub mod buffer;
 
 // expose a few ash/vk things
 pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, PrimitiveTopology};
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use std::{collections::HashMap, ffi::{CStr, CString}};
 use ash::{extensions, vk};
 use create_info::{CullMode, Scissor, Viewport, VustCreateInfo};
@@ -26,6 +28,7 @@ pub struct Vust {
 
     swapchain_format: vk::SurfaceFormatKHR,
     extent: vk::Extent2D,
+    swapchain_util: extensions::khr::Swapchain,
     swapchain: vk::SwapchainKHR,
     swapchain_image_views: Vec<vk::ImageView>,
 
@@ -35,11 +38,28 @@ pub struct Vust {
     depth_image_view: vk::ImageView,
     depth_image_memory: vk::DeviceMemory,
 
-    depth_renderpass: vk::RenderPass,
-    no_depth_renderpass: vk::RenderPass,
-    
+    renderpass: vk::RenderPass,
     graphics_pipelines: HashMap<String, vk::Pipeline>,
-    swapchain_framebuffers: Vec<vk::Framebuffer>
+    swapchain_framebuffers: Vec<vk::Framebuffer>,
+
+    draw_command_buffers: [vk::CommandBuffer; 2],
+    image_available_semaphores: [vk::Semaphore; 2],
+    render_finished_semaphores: [vk::Semaphore; 2],
+    in_flight_fences: [vk::Fence; 2],
+    current_frame: usize,
+
+    draw_calls: Vec<DrawCall>,
+    memory_allocator: Allocator
+}
+
+#[derive(Debug, Clone)]
+pub struct DrawCall {
+    pub graphics_pipeline: String,
+    pub viewport: Option<vk::Viewport>,
+    pub scissor: Option<vk::Rect2D>,
+    pub vertex_count: u32,
+    pub vertex_buffer: vk::Buffer,
+    pub vertex_buffer_offset: u64
 }
 
 impl Vust {
@@ -48,6 +68,8 @@ impl Vust {
         CStr::from_bytes_with_nul_unchecked(b"Vust\0")
     };
     pub const VERSION: u32 = vk::make_api_version(0, 0, 1, 0);
+
+    pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 
     pub fn new(mut create_info: VustCreateInfo) -> Self {
@@ -263,12 +285,6 @@ impl Vust {
             ).unwrap();
             #[cfg(debug_assertions)]
             println!("created vulkan command pool");
-            
-            // 2 renderpasses
-            // 1 with depth testing
-            // 1 without depth testing
-            // im doing this so when i need to create say 2 graphic pipelines for UI and 3 for 3D i can just select which renderpass to use
-            // tbh im not smart enough to understand how renderpasses work but we ball
 
             let color_attachment = vk::AttachmentDescription::builder()
                 .format(swapchain_format.format)
@@ -285,28 +301,6 @@ impl Vust {
                 .attachment(0)
                 .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                 .build();
-
-            let no_depth_renderpass = device.create_render_pass(
-                &vk::RenderPassCreateInfo::builder()
-                    .attachments(&[color_attachment])
-                    .subpasses(&[
-                        vk::SubpassDescription::builder()
-                            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-                            .color_attachments(&[color_attachment_ref])
-                            .build()
-                    ])
-                    .dependencies(&[
-                        vk::SubpassDependency::builder()
-                            .src_subpass(vk::SUBPASS_EXTERNAL)
-                            .dst_subpass(0)
-                            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-                            .src_access_mask(vk::AccessFlags::empty())
-                            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-                            .build()
-                    ]),
-                None
-            ).unwrap();
 
             let depth_format = {
                 let wanted_formats = [vk::Format::D24_UNORM_S8_UINT, vk::Format::D32_SFLOAT_S8_UINT];
@@ -457,7 +451,7 @@ impl Vust {
                 &[transition_depth_image_command_buffer],
             );
 
-            let depth_renderpass = device.create_render_pass(
+            let renderpass = device.create_render_pass(
                 &vk::RenderPassCreateInfo::builder()
                     .attachments(&[color_attachment, depth_attachment])
                     .subpasses(&[
@@ -639,22 +633,13 @@ impl Vust {
 
                 let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states).build();
 
-                let depth_stencil_info = if info.enable_depth_test {
-                    vk::PipelineDepthStencilStateCreateInfo::builder()
-                        .depth_test_enable(true)
-                        .depth_write_enable(true)
-                        .depth_compare_op(vk::CompareOp::LESS)
-                        .depth_bounds_test_enable(false)
-                        .stencil_test_enable(false)
-                        .build()
-                } else {
-                    vk::PipelineDepthStencilStateCreateInfo::builder()
-                        .depth_test_enable(false)
-                        .depth_write_enable(false)
-                        .depth_bounds_test_enable(false)
-                        .stencil_test_enable(false)
-                        .build()
-                };
+                let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+                    .depth_test_enable(true)
+                    .depth_write_enable(true)
+                    .depth_compare_op(vk::CompareOp::LESS)
+                    .depth_bounds_test_enable(false)
+                    .stencil_test_enable(false)
+                    .build();
 
                 let pipeline = device.create_graphics_pipelines(
                     vk::PipelineCache::null(),
@@ -670,7 +655,7 @@ impl Vust {
                             .color_blend_state(&color_blend_info)
                             .dynamic_state(&dynamic_state_info)
                             .layout(pipeline_layout)
-                            .render_pass(if info.enable_depth_test { depth_renderpass } else { no_depth_renderpass })
+                            .render_pass(renderpass)
                             .subpass(0)
                             .build()
                     ],
@@ -685,7 +670,7 @@ impl Vust {
             let swapchain_framebuffers = swapchain_image_views.iter().map(|image_view| {
                 let attachments = [*image_view, depth_image_view];
                 device.create_framebuffer(&vk::FramebufferCreateInfo::builder()
-                    .render_pass(depth_renderpass)
+                    .render_pass(renderpass)
                     .attachments(&attachments)
                     .width(extent.width)
                     .height(extent.height)
@@ -695,41 +680,218 @@ impl Vust {
             #[cfg(debug_assertions)]
             println!("created swapchain framebuffers");
 
+            let draw_command_buffers: [vk::CommandBuffer; 2] = device.allocate_command_buffers(
+                &vk::CommandBufferAllocateInfo::builder()
+                    .command_pool(command_pool)
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(2)
+                    .build()
+            ).unwrap().try_into().unwrap();
+
+            let semaphore_create_info = vk::SemaphoreCreateInfo::builder().build();
+            let fence_create_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED).build();
+
+            let image_available_semaphores = [device.create_semaphore(&semaphore_create_info, None).unwrap(), device.create_semaphore(&semaphore_create_info, None).unwrap()];
+            let render_finished_semaphores = [device.create_semaphore(&semaphore_create_info, None).unwrap(), device.create_semaphore(&semaphore_create_info, None).unwrap()];
+            let in_flight_fences = [device.create_fence(&fence_create_info, None).unwrap(), device.create_fence(&fence_create_info, None).unwrap()];
+
+            let memory_allocator = Allocator::new(&AllocatorCreateDesc {
+                instance: instance.clone(),
+                device: device.clone(),
+                physical_device,
+                debug_settings: Default::default(),
+                buffer_device_address: false,
+                allocation_sizes: Default::default()
+            }).unwrap();
+            
             Self {
                 entry,
                 instance,
-
+            
                 #[cfg(debug_assertions)]
                 debug_utils_loader,
                 #[cfg(debug_assertions)]
                 debug_utils_messenger,
-
+            
                 physical_device,
-
+            
                 device,
                 queue_index,
                 queue,
-
+            
                 surface_util,
                 surface,
-
+            
                 swapchain_format,
                 extent,
+                swapchain_util,
                 swapchain,
                 swapchain_image_views,
-
+            
                 command_pool,
-
+            
                 depth_image,
                 depth_image_memory,
                 depth_image_view,
-
-                depth_renderpass,
-                no_depth_renderpass,
-
+            
+                renderpass,
                 graphics_pipelines,
-                swapchain_framebuffers
+                swapchain_framebuffers,
+            
+                draw_command_buffers,
+                image_available_semaphores,
+                render_finished_semaphores,
+                in_flight_fences,
+                current_frame: 0,
+            
+                draw_calls: Vec::new(),
+                memory_allocator
             }
+        }
+    }
+
+    pub fn reset_command_buffer(&self) {
+        unsafe {
+            self.device.wait_for_fences(&[self.in_flight_fences[self.current_frame]], true, std::u64::MAX).unwrap();
+            self.device.reset_fences(&[self.in_flight_fences[self.current_frame]]).unwrap();
+
+            self.device.reset_command_buffer(self.draw_command_buffers[self.current_frame], vk::CommandBufferResetFlags::empty()).unwrap();
+        }
+    }
+
+    pub fn draw(&mut self, draw_call: DrawCall) {
+        self.draw_calls.push(draw_call);
+    }
+
+    pub fn render_surface(&mut self) {
+        unsafe {
+            let image_index = self.swapchain_util.acquire_next_image(
+                self.swapchain,
+                std::u64::MAX,
+                self.image_available_semaphores[self.current_frame],
+                vk::Fence::null()
+            ).unwrap().0;
+
+            self.device.begin_command_buffer(self.draw_command_buffers[self.current_frame], &vk::CommandBufferBeginInfo::builder().build()).unwrap();
+
+            self.device.cmd_begin_render_pass(
+                self.draw_command_buffers[self.current_frame],
+                &vk::RenderPassBeginInfo::builder()
+                    .render_pass(self.renderpass)
+                    .framebuffer(self.swapchain_framebuffers[image_index as usize])
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: self.extent
+                    })
+                    .clear_values(&[vk::ClearValue {
+                        color: vk::ClearColorValue { float32: [0.0, 0.0, 0.0, 1.0] }
+                    }, vk::ClearValue {
+                        depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 }
+                    }])
+                    .build(),
+                vk::SubpassContents::INLINE
+            );
+
+            for call in &self.draw_calls {
+                self.device.cmd_bind_pipeline(self.draw_command_buffers[self.current_frame], vk::PipelineBindPoint::GRAPHICS, self.graphics_pipelines[&call.graphics_pipeline]);
+
+                if let Some(viewport) = call.viewport {
+                    self.device.cmd_set_viewport(self.draw_command_buffers[self.current_frame], 0, &[viewport]);
+                }
+
+                if let Some(scissor) = call.scissor {
+                    self.device.cmd_set_scissor(self.draw_command_buffers[self.current_frame], 0, &[scissor]);
+                }
+
+                // bind descriptor sets -- later
+                    
+                self.device.cmd_bind_vertex_buffers(
+                    self.draw_command_buffers[self.current_frame],
+                    0,
+                    &[call.vertex_buffer],
+                    &[call.vertex_buffer_offset]
+                );
+                    
+                self.device.cmd_draw(
+                    self.draw_command_buffers[self.current_frame],
+                    call.vertex_count,
+                    1,
+                    0,
+                    0
+                );
+            }
+            self.draw_calls.clear();
+
+            self.device.cmd_end_render_pass(self.draw_command_buffers[self.current_frame]);
+            self.device.end_command_buffer(self.draw_command_buffers[self.current_frame]).unwrap();
+
+            self.device.queue_submit(
+                self.queue,
+                &[
+                    vk::SubmitInfo::builder()
+                        .command_buffers(&[self.draw_command_buffers[self.current_frame]])
+                        .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                        .wait_semaphores(&[self.image_available_semaphores[self.current_frame]])
+                        .signal_semaphores(&[self.render_finished_semaphores[self.current_frame]])
+                        .build()
+                ],
+                self.in_flight_fences[self.current_frame]
+            ).unwrap();
+
+            self.swapchain_util.queue_present(
+                self.queue,
+                &vk::PresentInfoKHR::builder()
+                    .swapchains(&[self.swapchain])
+                    .image_indices(&[image_index])
+                    .wait_semaphores(&[self.render_finished_semaphores[self.current_frame]])
+                    .build()
+            ).unwrap();
+
+            self.current_frame = (self.current_frame + 1) % Self::MAX_FRAMES_IN_FLIGHT;
+        }
+    }
+
+    pub fn begin_single_exec_command(&self) -> vk::CommandBuffer {
+        unsafe {
+            let command_buffer = self.device.allocate_command_buffers(
+                &vk::CommandBufferAllocateInfo::builder()
+                    .command_pool(self.command_pool)
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(1)
+                    .build(),
+            ).unwrap()[0];
+    
+            self.device.begin_command_buffer(
+                command_buffer,
+                &vk::CommandBufferBeginInfo::builder()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+                    .build(),
+            ).unwrap();
+    
+            command_buffer
+        }
+    }
+    
+    pub fn end_single_exec_command(&self, command_buffer: vk::CommandBuffer) {
+        unsafe {
+            self.device.end_command_buffer(command_buffer).unwrap();
+    
+            self.device.queue_submit(
+                self.queue,
+                &[
+                    vk::SubmitInfo::builder()
+                        .command_buffers(&[command_buffer])
+                        .build(),
+                ],
+                vk::Fence::null()
+            ).unwrap();
+    
+            self.device.queue_wait_idle(self.queue).unwrap();
+    
+            self.device.free_command_buffers(
+                self.command_pool,
+                &[command_buffer],
+            );
         }
     }
 
@@ -776,5 +938,63 @@ impl Vust {
         }
 
         None
+    }
+
+    pub fn transition_image_layout(
+        &self,
+        image: vk::Image,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout
+    ) {
+        let transition_command_buffer = self.begin_single_exec_command();
+    
+        let mut barrier = vk::ImageMemoryBarrier::builder()
+            .old_layout(old_layout)
+            .new_layout(new_layout)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1)
+                .build())
+            .build();
+        
+        let (src_stage, dst_stage) = if old_layout == vk::ImageLayout::UNDEFINED  && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::empty();
+            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+    
+            (vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER)
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+    
+            (vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER)
+        } else if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+            barrier.subresource_range.aspect_mask = vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL;
+            barrier.src_access_mask = vk::AccessFlags::empty();
+            barrier.dst_access_mask = vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+    
+            (vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
+        } else {
+            unreachable!()
+        };
+    
+        unsafe {
+            self.device.cmd_pipeline_barrier(
+                transition_command_buffer,
+                src_stage,
+                dst_stage,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+    
+        self.end_single_exec_command(transition_command_buffer);
     }
 }

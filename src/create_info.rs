@@ -109,7 +109,6 @@ pub struct GraphicsPipelineCreateInfo {
     pub name: String,
     pub vertex_bin: Vec<u8>,
     pub fragment_bin: Vec<u8>,
-    pub enable_depth_test: bool,
     pub vertex_binding_descriptions: Vec<VertexInputBindingDescription>,
     pub vertex_attribute_descriptions: Vec<VertexInputAttributeDescription>,
     pub topology: vk::PrimitiveTopology,
