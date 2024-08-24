@@ -1,12 +1,17 @@
 pub mod create_info;
 pub mod buffer;
+pub mod texture;
+pub mod pipeline;
+pub mod write_descriptor_info;
 
 // expose a few ash/vk things
 pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, PrimitiveTopology};
+use create_info::VustCreateInfo;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use pipeline::GraphicsPipeline;
+use write_descriptor_info::WriteDescriptorInfo;
 use std::{collections::HashMap, ffi::{CStr, CString}};
 use ash::{extensions, vk};
-use create_info::{CullMode, Scissor, Viewport, VustCreateInfo};
 
 pub struct Vust {
     entry: ash::Entry,
@@ -39,7 +44,6 @@ pub struct Vust {
     depth_image_memory: vk::DeviceMemory,
 
     renderpass: vk::RenderPass,
-    graphics_pipelines: HashMap<String, vk::Pipeline>,
     swapchain_framebuffers: Vec<vk::Framebuffer>,
 
     draw_command_buffers: [vk::CommandBuffer; 2],
@@ -47,19 +51,9 @@ pub struct Vust {
     render_finished_semaphores: [vk::Semaphore; 2],
     in_flight_fences: [vk::Fence; 2],
     current_frame: usize,
+    image_index: u32,
 
-    draw_calls: Vec<DrawCall>,
     memory_allocator: Allocator
-}
-
-#[derive(Debug, Clone)]
-pub struct DrawCall {
-    pub graphics_pipeline: String,
-    pub viewport: Option<vk::Viewport>,
-    pub scissor: Option<vk::Rect2D>,
-    pub vertex_count: u32,
-    pub vertex_buffer: vk::Buffer,
-    pub vertex_buffer_offset: u64
 }
 
 impl Vust {
@@ -67,7 +61,19 @@ impl Vust {
     pub const C_NAME: &'static CStr = unsafe {
         CStr::from_bytes_with_nul_unchecked(b"Vust\0")
     };
-    pub const VERSION: u32 = vk::make_api_version(0, 0, 1, 0);
+
+    pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    /// used for vulkan
+    // had to do all this funny shit cuz .parse() isnt const :/
+    pub const VERSION_VK: u32 = {
+        let version = env!("CARGO_PKG_VERSION").as_bytes();
+
+        let major = version[0] as u32 - 48;
+        let minor = version[2] as u32 - 48;
+        let patch = version[4] as u32 - 48;
+
+        vk::make_api_version(0, major, minor, patch)
+    };
 
     pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
@@ -83,7 +89,7 @@ impl Vust {
                     .application_name(&create_info.app_name)
                     .application_version(create_info.app_version)
                     .engine_name(Vust::C_NAME)
-                    .engine_version(Vust::VERSION)
+                    .engine_version(Vust::VERSION_VK)
                     .api_version(vk::make_api_version(0, 1, 3, 0))
                     .build();
 
@@ -474,199 +480,6 @@ impl Vust {
                 None
             ).unwrap();
 
-            let mut graphics_pipelines = HashMap::new();
-
-            for info in create_info.graphics_pipeline_create_infos.iter() {
-                let vertex_input_state = device.create_shader_module(&vk::ShaderModuleCreateInfo {
-                    s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
-                    code_size: info.vertex_bin.len(),
-                    p_code: info.vertex_bin.as_ptr() as *const u32,
-                    ..Default::default()
-                }, None).unwrap();
-
-                let fragment_input_state = device.create_shader_module(&vk::ShaderModuleCreateInfo {
-                    s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
-                    code_size: info.fragment_bin.len(),
-                    p_code: info.fragment_bin.as_ptr() as *const u32,
-                    ..Default::default()
-                }, None).unwrap();
-
-                let entry_point_name = CString::new("main").unwrap();
-
-                let shader_stages = [
-                    vk::PipelineShaderStageCreateInfo::builder()
-                        .stage(vk::ShaderStageFlags::VERTEX)
-                        .module(vertex_input_state)
-                        .name(&entry_point_name)
-                        .build(),
-                    vk::PipelineShaderStageCreateInfo::builder()
-                        .stage(vk::ShaderStageFlags::FRAGMENT)
-                        .module(fragment_input_state)
-                        .name(&entry_point_name)
-                        .build()
-                ];
-
-                let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
-                    .vertex_binding_descriptions(&info.vertex_binding_descriptions)
-                    .vertex_attribute_descriptions(&info.vertex_attribute_descriptions)
-                    .build();
-
-                let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
-                    .topology(info.topology)
-                    .primitive_restart_enable(false)
-                    .build();
-
-                // absolute unit of a match statement
-                let viewport_state_info = match (info.viewport.clone(), info.scissor.clone()) {
-                    (Viewport::Dynamic, Scissor::Dynamic) => {
-                        vk::PipelineViewportStateCreateInfo::builder().viewport_count(1).scissor_count(1).build()
-                    }
-                    (Viewport::Dynamic, Scissor::Static { x, y, width, height }) => {
-                        vk::PipelineViewportStateCreateInfo::builder()
-                            .viewport_count(1)
-                            .scissors(&[
-                                vk::Rect2D {
-                                    offset: vk::Offset2D { x, y },
-                                    extent: vk::Extent2D { width, height }
-                                }
-                            ])
-                            .build()
-                    }
-                    (Viewport::Static { x, y, width, height, min_depth, max_depth }, Scissor::Dynamic) => {
-                        vk::PipelineViewportStateCreateInfo::builder()
-                            .viewports(&[
-                                vk::Viewport {
-                                    x,
-                                    y,
-                                    width,
-                                    height,
-                                    min_depth,
-                                    max_depth
-                                }
-                            ])
-                            .scissor_count(1)
-                            .build()
-                    }
-                    (Viewport::Static { x: v_x, y: v_y, width: v_width, height: v_height, min_depth: v_min_depth, max_depth: v_max_depth }, Scissor::Static { x: s_x, y: s_y, width: s_width, height: s_height }) => {
-                        vk::PipelineViewportStateCreateInfo::builder()
-                            .viewports(&[
-                                vk::Viewport {
-                                    x: v_x,
-                                    y: v_y,
-                                    width: v_width,
-                                    height: v_height,
-                                    min_depth: v_min_depth,
-                                    max_depth: v_max_depth
-                                }
-                            ]).scissors(&[
-                                vk::Rect2D {
-                                    offset: vk::Offset2D { x: s_x, y: s_y },
-                                    extent: vk::Extent2D { width: s_width, height: s_height }
-                                }
-                            ])
-                            .build()
-                    }
-                };
-
-                let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
-                    .depth_clamp_enable(false)
-                    .rasterizer_discard_enable(false)
-                    .polygon_mode(info.polygon_mode)
-                    .line_width(1.0)
-                    .cull_mode(if let CullMode::None = info.cull_mode { vk::CullModeFlags::NONE } else { vk::CullModeFlags::BACK })
-                    .front_face(
-                        match &info.cull_mode {
-                            CullMode::None => vk::FrontFace::CLOCKWISE, // doesnt matter cuz cull mode is none
-                            CullMode::Clockwise => vk::FrontFace::CLOCKWISE,
-                            CullMode::AntiClockwise => vk::FrontFace::COUNTER_CLOCKWISE
-                        }
-                    )
-                    .depth_bias_enable(false)
-                    .build();
-
-                let multisample_info = vk::PipelineMultisampleStateCreateInfo::builder()
-                    .rasterization_samples(vk::SampleCountFlags::TYPE_1)
-                    .sample_shading_enable(false)
-                    .build();
-
-                let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
-                    .color_write_mask(vk::ColorComponentFlags::RGBA)
-                    .blend_enable(true)
-                    .color_blend_op(vk::BlendOp::ADD)
-                    .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-                    .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-                    .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                    .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-                    .alpha_blend_op(vk::BlendOp::ADD)
-                    .build();
-
-                let color_blend_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                    .attachments(&[color_blend_attachment])
-                    .logic_op_enable(true)
-                    .logic_op(vk::LogicOp::COPY)
-                    .blend_constants([0.0, 0.0, 0.0, 0.0])
-                    .build();
-
-                let descriptor_set_layouts = info.descriptor_set_layouts.iter().map(|descriptor_set_layout| {
-                    let bindings = descriptor_set_layout.bindings.iter().enumerate().map(|(i, descriptor_set_binding)| {
-                        vk::DescriptorSetLayoutBinding::builder()
-                            .binding(i as u32)
-                            .descriptor_type(descriptor_set_binding.descriptor_type)
-                            .descriptor_count(1)
-                            .stage_flags(descriptor_set_binding.stage_flags)
-                            .build()
-                    }).collect::<Vec<_>>();
-                    
-                    device.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings).build(), None).unwrap()
-                }).collect::<Vec<_>>();
-
-                let pipeline_layout = device.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts).build(), None).unwrap();
-                
-                let mut dynamic_states = Vec::new();
-                
-                if let Viewport::Dynamic = info.viewport {
-                    dynamic_states.push(vk::DynamicState::VIEWPORT);
-                }
-                if let Scissor::Dynamic = info.scissor {
-                    dynamic_states.push(vk::DynamicState::SCISSOR);
-                }
-
-                let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states).build();
-
-                let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-                    .depth_test_enable(true)
-                    .depth_write_enable(true)
-                    .depth_compare_op(vk::CompareOp::LESS)
-                    .depth_bounds_test_enable(false)
-                    .stencil_test_enable(false)
-                    .build();
-
-                let pipeline = device.create_graphics_pipelines(
-                    vk::PipelineCache::null(),
-                    &[
-                        vk::GraphicsPipelineCreateInfo::builder()
-                            .stages(&shader_stages)
-                            .vertex_input_state(&vertex_input_info)
-                            .input_assembly_state(&input_assembly_info)
-                            .viewport_state(&viewport_state_info)
-                            .rasterization_state(&rasterizer_info)
-                            .multisample_state(&multisample_info)
-                            .depth_stencil_state(&depth_stencil_info)
-                            .color_blend_state(&color_blend_info)
-                            .dynamic_state(&dynamic_state_info)
-                            .layout(pipeline_layout)
-                            .render_pass(renderpass)
-                            .subpass(0)
-                            .build()
-                    ],
-                    None
-                ).unwrap()[0];
-
-                graphics_pipelines.insert(info.name.clone(), pipeline);
-            }
-            #[cfg(debug_assertions)]
-            println!("created {} graphics pipelines", graphics_pipelines.len());
-
             let swapchain_framebuffers = swapchain_image_views.iter().map(|image_view| {
                 let attachments = [*image_view, depth_image_view];
                 device.create_framebuffer(&vk::FramebufferCreateInfo::builder()
@@ -735,7 +548,6 @@ impl Vust {
                 depth_image_view,
             
                 renderpass,
-                graphics_pipelines,
                 swapchain_framebuffers,
             
                 draw_command_buffers,
@@ -743,29 +555,21 @@ impl Vust {
                 render_finished_semaphores,
                 in_flight_fences,
                 current_frame: 0,
+                image_index: 0,
             
-                draw_calls: Vec::new(),
                 memory_allocator
             }
         }
     }
 
-    pub fn reset_command_buffer(&self) {
+    pub fn reset_command_buffer(&mut self) {
         unsafe {
             self.device.wait_for_fences(&[self.in_flight_fences[self.current_frame]], true, std::u64::MAX).unwrap();
             self.device.reset_fences(&[self.in_flight_fences[self.current_frame]]).unwrap();
 
             self.device.reset_command_buffer(self.draw_command_buffers[self.current_frame], vk::CommandBufferResetFlags::empty()).unwrap();
-        }
-    }
 
-    pub fn draw(&mut self, draw_call: DrawCall) {
-        self.draw_calls.push(draw_call);
-    }
-
-    pub fn render_surface(&mut self) {
-        unsafe {
-            let image_index = self.swapchain_util.acquire_next_image(
+            self.image_index = self.swapchain_util.acquire_next_image(
                 self.swapchain,
                 std::u64::MAX,
                 self.image_available_semaphores[self.current_frame],
@@ -778,7 +582,7 @@ impl Vust {
                 self.draw_command_buffers[self.current_frame],
                 &vk::RenderPassBeginInfo::builder()
                     .render_pass(self.renderpass)
-                    .framebuffer(self.swapchain_framebuffers[image_index as usize])
+                    .framebuffer(self.swapchain_framebuffers[self.image_index as usize])
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent: self.extent
@@ -791,37 +595,102 @@ impl Vust {
                     .build(),
                 vk::SubpassContents::INLINE
             );
+        }
+    }
 
-            for call in &self.draw_calls {
-                self.device.cmd_bind_pipeline(self.draw_command_buffers[self.current_frame], vk::PipelineBindPoint::GRAPHICS, self.graphics_pipelines[&call.graphics_pipeline]);
+    pub fn bind_pipeline(&self, pipeline_handle: vk::Pipeline) {
+        unsafe {
+            self.device.cmd_bind_pipeline(
+                self.draw_command_buffers[self.current_frame],
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_handle
+            );
+        }
+    }
 
-                if let Some(viewport) = call.viewport {
-                    self.device.cmd_set_viewport(self.draw_command_buffers[self.current_frame], 0, &[viewport]);
-                }
+    pub fn bind_viewport(&self, viewport: vk::Viewport) {
+        unsafe {
+            self.device.cmd_set_viewport(
+                self.draw_command_buffers[self.current_frame],
+                0,
+                &[viewport]
+            );
+        }
+    }
 
-                if let Some(scissor) = call.scissor {
-                    self.device.cmd_set_scissor(self.draw_command_buffers[self.current_frame], 0, &[scissor]);
-                }
+    pub fn bind_scissor(&self, scissor: vk::Rect2D) {
+        unsafe {
+            self.device.cmd_set_scissor(
+                self.draw_command_buffers[self.current_frame],
+                0,
+                &[scissor]
+            );
+        }
+    }
 
-                // bind descriptor sets -- later
-                    
-                self.device.cmd_bind_vertex_buffers(
-                    self.draw_command_buffers[self.current_frame],
-                    0,
-                    &[call.vertex_buffer],
-                    &[call.vertex_buffer_offset]
-                );
-                    
-                self.device.cmd_draw(
-                    self.draw_command_buffers[self.current_frame],
-                    call.vertex_count,
-                    1,
-                    0,
-                    0
-                );
-            }
-            self.draw_calls.clear();
+    pub fn bind_descriptor_set(&self, pipeline: &GraphicsPipeline) {
+        unsafe {
+            self.device.cmd_bind_descriptor_sets(
+                self.draw_command_buffers[self.current_frame],
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline.pipeline_layout(),
+                0,
+                &[pipeline.descriptor_sets().unwrap()[self.current_frame]],
+                &[]
+            );
+        }
+    }
 
+    pub fn bind_vertex_buffer(&self, vertex_buffer: vk::Buffer) {
+        unsafe {
+            self.device.cmd_bind_vertex_buffers(
+                self.draw_command_buffers[self.current_frame],
+                0,
+                &[vertex_buffer],
+                &[0]
+            );
+        }
+    }
+
+    /// index buffer must contain 32bit integer (i32/u32) indices
+    pub fn bind_index_buffer(&self, index_buffer: vk::Buffer) {
+        unsafe {
+            self.device.cmd_bind_index_buffer(
+                self.draw_command_buffers[self.current_frame],
+                index_buffer,
+                0,
+                vk::IndexType::UINT32
+            );
+        }
+    }
+
+    pub fn draw(&self, vertex_count: u32) {
+        unsafe {
+            self.device.cmd_draw(
+                self.draw_command_buffers[self.current_frame],
+                vertex_count,
+                1,
+                0,
+                0
+            );
+        }
+    }
+
+    pub fn draw_indexed(&self, index_count: u32) {
+        unsafe {
+            self.device.cmd_draw_indexed(
+                self.draw_command_buffers[self.current_frame],
+                index_count,
+                1,
+                0,
+                0,
+                0
+            );
+        }
+    }
+
+    pub fn render_surface(&mut self) {
+        unsafe {
             self.device.cmd_end_render_pass(self.draw_command_buffers[self.current_frame]);
             self.device.end_command_buffer(self.draw_command_buffers[self.current_frame]).unwrap();
 
@@ -842,12 +711,72 @@ impl Vust {
                 self.queue,
                 &vk::PresentInfoKHR::builder()
                     .swapchains(&[self.swapchain])
-                    .image_indices(&[image_index])
+                    .image_indices(&[self.image_index])
                     .wait_semaphores(&[self.render_finished_semaphores[self.current_frame]])
                     .build()
             ).unwrap();
 
             self.current_frame = (self.current_frame + 1) % Self::MAX_FRAMES_IN_FLIGHT;
+        }
+    }
+
+    pub fn update_descriptor_set(&self, pipeline: &GraphicsPipeline, write_descriptor_infos: &[WriteDescriptorInfo]) {
+        unsafe {
+            let mut write_descriptor_info = pipeline.write_descriptor_set_infos()
+                .iter()
+                .map(|write_descriptor_infos| write_descriptor_infos[self.current_frame])
+                .collect::<Vec<_>>();
+
+            // im holding the infos in a vec for the duration of this function's scope to avoid ptr lifetime issues when i pass the pointer to buffer/image info into a vk::WriteDescriptorSet
+            enum BufferOrImageInfo {
+                Buffer(vk::DescriptorBufferInfo),
+                Image(vk::DescriptorImageInfo)
+            }
+
+            let infos = write_descriptor_infos
+                .iter()
+                .map(|write_descriptor_info| {
+                    match write_descriptor_info {
+                        WriteDescriptorInfo::Buffer { buffer, offset, range } => {
+                            BufferOrImageInfo::Buffer(vk::DescriptorBufferInfo::builder()
+                                .buffer(*buffer)
+                                .offset(*offset)
+                                .range(*range)
+                                .build())
+                        }
+                        WriteDescriptorInfo::Image { image_view, sampler } => {
+                            BufferOrImageInfo::Image(vk::DescriptorImageInfo::builder()
+                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                .image_view(*image_view)
+                                .sampler(*sampler)
+                                .build())
+                        }
+                    }
+                })
+                .collect::<Vec<BufferOrImageInfo>>();
+
+            for (i, write_descriptor_info) in write_descriptor_info.iter_mut().enumerate() {
+                match infos[i] {
+                    BufferOrImageInfo::Buffer(buffer) => {
+                        write_descriptor_info.p_buffer_info = &buffer;
+                    }
+                    BufferOrImageInfo::Image(image) => {
+                        write_descriptor_info.p_image_info = &image;
+                    }
+                }
+                write_descriptor_info.descriptor_count = 1;
+            }
+
+            self.device.update_descriptor_sets(
+                &write_descriptor_info,
+                &[]
+            );
+        }
+    }
+
+    pub fn wait_idle(&self) {
+        unsafe {
+            self.device.device_wait_idle().unwrap();
         }
     }
 

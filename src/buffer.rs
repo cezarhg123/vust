@@ -1,6 +1,6 @@
 use std::mem::size_of_val;
 
-use ash::vk;
+use ash::vk::{self, Handle};
 use gpu_allocator::{vulkan::{Allocation, AllocationCreateDesc, AllocationScheme}, MemoryLocation};
 
 use crate::Vust;
@@ -58,6 +58,8 @@ impl<'a, T> BufferBuilder<'a, T> {
         self
     }
 
+    /// currently only host visible and device local memory are supported
+    /// 
     /// write_on_creation - if true, the buffer will be written to on creation
     pub fn build(self, vust: &mut Vust, write_on_creation: bool) -> Buffer {
         unsafe {
@@ -95,7 +97,7 @@ impl<'a, T> BufferBuilder<'a, T> {
             vust.device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
 
             #[cfg(debug_assertions)]
-            println!("created buffer: {}", self.name);
+            println!("created buffer: {} - handle: {:#x}", self.name, buffer.as_raw());
 
             if write_on_creation {
                 memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(self.data.as_ptr(), self.data.len());
