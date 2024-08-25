@@ -4,6 +4,7 @@ use crate::pipeline::GraphicsPipeline;
 
 pub struct VustCreateInfo {
     pub(super) app_name: CString,
+    /// app_version must be given from vust::make_api_version()
     pub(super) app_version: u32,
 
     pub(super) enabled_instance_extensions: Vec<CString>,
@@ -43,6 +44,7 @@ impl VustCreateInfo {
         self
     }
 
+    /// app_version must be given from vust::make_api_version()
     pub fn with_app_version(mut self, app_version: u32) -> Self {
         self.app_version = app_version;
         self
