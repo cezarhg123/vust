@@ -1,13 +1,16 @@
+pub use vk::{Format, Filter};
+
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
 use crate::{buffer::Buffer, Vust};
 
 pub struct Texture {
     image: vk::Image,
-    allocation: Allocation,
+    allocation: Option<Allocation>,
     view: vk::ImageView,
     sampler: vk::Sampler,
-    descriptor_info: vk::DescriptorImageInfo
+    descriptor_info: vk::DescriptorImageInfo,
+    destroyed: bool
 }
 
 impl Texture {
@@ -22,12 +25,31 @@ impl Texture {
         }
     }
 
+    pub fn destroy(&mut self, vust: &mut Vust) {
+        if !self.destroyed {
+            unsafe {
+                vust.device.destroy_image(self.image, None);
+                vust.memory_allocator.free(self.allocation.take().unwrap()).unwrap();
+                vust.device.destroy_image_view(self.view, None);
+                vust.device.destroy_sampler(self.sampler, None);
+            }
+        }
+    }
+
     pub fn view(&self) -> vk::ImageView {
         self.view
     }
 
     pub fn sampler(&self) -> vk::Sampler {
         self.sampler
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        if !self.destroyed {
+            panic!("texture was not destroyed");
+        }
     }
 }
 
@@ -207,10 +229,11 @@ impl<'a> TextureBuilder<'a> {
 
                 Some(Texture {
                     image,
-                    allocation,
+                    allocation: Some(allocation),
                     view,
                     sampler,
-                    descriptor_info
+                    descriptor_info,
+                    destroyed: false
                 })
             }
         }
