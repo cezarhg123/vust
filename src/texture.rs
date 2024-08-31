@@ -69,6 +69,11 @@ impl<'a> TextureBuilder<'a> {
         self
     }
 
+    #[cfg(not(debug_assertions))]
+    pub fn with_name(mut self, _name: &str) -> Self {
+        self
+    }
+
     pub fn with_data(mut self, data: &'a [u8]) -> Self {
         self.data = data;
         self

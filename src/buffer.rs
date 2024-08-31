@@ -127,6 +127,11 @@ impl<'a, T> BufferBuilder<'a, T> {
         self
     }
 
+    #[cfg(not(debug_assertions))]
+    pub fn with_name(mut self, _name: &str) -> Self {
+        self
+    }
+
     pub fn with_data(mut self, data: &'a [T]) -> Self {
         self.data = data;
         self
