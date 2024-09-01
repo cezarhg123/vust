@@ -185,9 +185,6 @@ impl<'a, T> BufferBuilder<'a, T> {
 
             vust.device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
 
-            #[cfg(debug_assertions)]
-            println!("created buffer: {} - handle: {:#x}", self.name, buffer.as_raw());
-
             if write_on_creation {
                 memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(self.data.as_ptr(), self.data.len());
             }
