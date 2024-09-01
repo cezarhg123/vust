@@ -5,7 +5,7 @@ pub mod pipeline;
 pub mod write_descriptor_info;
 
 // expose a few ash/vk things
-pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, PrimitiveTopology};
+pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, PrimitiveTopology, Format, VertexInputRate};
 use create_info::VustCreateInfo;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use pipeline::GraphicsPipeline;
