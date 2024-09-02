@@ -1,3 +1,5 @@
+pub use vk::{PrimitiveTopology, PolygonMode, DescriptorType, ShaderStageFlags};
+
 use std::ffi::CString;
 use ash::vk::{self, VertexInputAttributeDescription, VertexInputBindingDescription};
 use crate::Vust;
