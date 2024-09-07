@@ -100,7 +100,7 @@ impl<'a> TextureBuilder<'a> {
             return None;
         } else {
             #[cfg(debug_assertions)]
-            let data_buffer = Buffer::builder()
+            let mut data_buffer = Buffer::builder()
                 .with_name(&self.name)
                 .with_data(&self.data)
                 .with_memory_location(vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT)
@@ -108,7 +108,7 @@ impl<'a> TextureBuilder<'a> {
                 .build(vust, true);
 
             #[cfg(not(debug_assertions))]
-            let data_buffer = Buffer::builder()
+            let mut data_buffer = Buffer::builder()
                 .with_data(&self.data)
                 .with_memory_location(vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT)
                 .with_usage(vk::BufferUsageFlags::TRANSFER_SRC)
@@ -231,6 +231,8 @@ impl<'a> TextureBuilder<'a> {
                     .image_view(view)
                     .sampler(sampler)
                     .build();
+
+                data_buffer.destroy(vust);
 
                 Some(Texture {
                     image,

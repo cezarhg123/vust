@@ -27,68 +27,6 @@ impl Buffer {
         }
     }
 
-    /// Allocates new memory if size of data is more than current buffer size
-    /// 
-    /// If data size isnt the same as current buffer size, you might aswell just create a new buffer
-    pub fn change_data<T>(&mut self, vust: &mut Vust, data: &[T]) {
-        unsafe {
-            let memory = self.memory.as_mut().unwrap();
-
-            let data_size = size_of_val(data) as u64;
-            if memory.size() >= data_size {
-                if self.buffer_size > data_size {
-                    vust.device.destroy_buffer(self.handle, None);
-                    
-                    let buffer = vust.device.create_buffer(
-                        &vk::BufferCreateInfo::builder()
-                            .size(data_size)
-                            .usage(self.usage)
-                            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                            .build(),
-                        None
-                    ).unwrap();
-
-                    self.handle = buffer;
-                    self.buffer_size = data_size;
-                    vust.device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
-                }
-
-                memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(data.as_ptr(), data.len());
-            } else {
-                vust.device.destroy_buffer(self.handle, None);
-
-                let buffer = vust.device.create_buffer(
-                    &vk::BufferCreateInfo::builder()
-                        .size(data_size)
-                        .usage(self.usage)
-                        .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                        .build(),
-                    None
-                ).unwrap();
-
-                self.handle = buffer;
-                self.buffer_size = data_size;
-
-                *memory = vust.memory_allocator.allocate(
-                    &AllocationCreateDesc {
-                        #[cfg(debug_assertions)]
-                        name: &self.name,
-                        #[cfg(not(debug_assertions))]
-                        name: "not debug",
-                        requirements: vust.device.get_buffer_memory_requirements(self.handle),
-                        location: MemoryLocation::CpuToGpu,
-                        linear: false,
-                        allocation_scheme: AllocationScheme::GpuAllocatorManaged
-                    }
-                ).unwrap();
-
-                vust.device.bind_buffer_memory(self.handle, memory.memory(), memory.offset()).unwrap();
-
-                memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(data.as_ptr(), data.len());
-            }
-        }
-    }
-
     pub fn destroy(&mut self, vust: &mut Vust) {
         unsafe {
             if !self.destroyed {
