@@ -1,5 +1,6 @@
 use ash::vk;
 
+#[derive(Debug, Clone, Copy)]
 pub enum WriteDescriptorInfo {
     Buffer {
         buffer: vk::Buffer,
