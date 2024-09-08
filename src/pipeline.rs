@@ -5,7 +5,7 @@ use ash::vk::{self, VertexInputAttributeDescription, VertexInputBindingDescripti
 use crate::{descriptor::Descriptor, Vust};
 
 pub struct GraphicsPipeline {
-    descriptor_pool_create_info: Option<vk::DescriptorPoolCreateInfo>,
+    descriptor_pool_create_info: Option<(vk::DescriptorPoolCreateInfo, Vec<vk::DescriptorPoolSize>)>,
     descriptor_set_layout: vk::DescriptorSetLayout,
     write_descriptor_set_info: Vec<[vk::WriteDescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT]>,
     pipeline_layout: vk::PipelineLayout,
@@ -203,20 +203,23 @@ impl GraphicsPipeline {
             ).unwrap()[0];
 
             let descriptor_pool_create_info = if let Some(descriptor_set_layout) = &create_info.descriptor_set_layout {
-                Some(vk::DescriptorPoolCreateInfo::builder()
-                    .max_sets(Vust::MAX_FRAMES_IN_FLIGHT as u32)
-                    .pool_sizes(
-                        &descriptor_set_layout.bindings
-                            .iter()
-                            .map(|bindings| {
-                                vk::DescriptorPoolSize::builder()
-                                    .ty(bindings.descriptor_type)
-                                    .descriptor_count(Vust::MAX_FRAMES_IN_FLIGHT as u32)
-                                    .build()
-                            })
-                            .collect::<Vec<_>>()
-                    )
-                    .build())
+                let pool_sizes = descriptor_set_layout.bindings
+                    .iter()
+                    .map(|bindings| {
+                        vk::DescriptorPoolSize::builder()
+                            .ty(bindings.descriptor_type)
+                            .descriptor_count(Vust::MAX_FRAMES_IN_FLIGHT as u32)
+                            .build()
+                    })
+                    .collect::<Vec<_>>();
+
+                Some((
+                    vk::DescriptorPoolCreateInfo::builder()
+                        .max_sets(Vust::MAX_FRAMES_IN_FLIGHT as u32)
+                        .pool_sizes(&pool_sizes)
+                        .build(),
+                    pool_sizes
+                ))
             } else {
                 None
             };
@@ -250,7 +253,7 @@ impl GraphicsPipeline {
     pub fn create_descriptor(&self, vust: &mut Vust) -> Option<Descriptor> {
         unsafe {
             let descriptor_pool = vust.device.create_descriptor_pool(
-                &self.descriptor_pool_create_info?,
+                &self.descriptor_pool_create_info.as_ref()?.0,
                 None
             ).ok()?;
 
