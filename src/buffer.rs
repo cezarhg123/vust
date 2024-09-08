@@ -11,8 +11,6 @@ pub struct Buffer {
     handle: vk::Buffer,
     memory: Option<Allocation>,
     usage: vk::BufferUsageFlags,
-    /// different from size of memory (self.memory.size())
-    buffer_size: u64,
     destroyed: bool
 }
 
@@ -24,6 +22,21 @@ impl Buffer {
             data: &[],
             usage: vk::BufferUsageFlags::empty(),
             memory_location: vk::MemoryPropertyFlags::empty()
+        }
+    }
+
+    pub fn overwrite<T>(&self, data: &[T]) -> Result<(), &str> {
+        if let Some(memory) = &self.memory {
+            if memory.size() < size_of_val(data) as u64 {
+                return Err("data size is bigger than buffer size");
+            }
+
+            unsafe {
+                memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(data.as_ptr(), data.len());
+                Ok(())
+            }
+        } else {
+            Err("buffer not created somehow??")
         }
     }
 
@@ -133,7 +146,6 @@ impl<'a, T> BufferBuilder<'a, T> {
                 handle: buffer,
                 memory: Some(memory),
                 usage: self.usage,
-                buffer_size: memory_requirements.size,
                 destroyed: false
             }
         }
