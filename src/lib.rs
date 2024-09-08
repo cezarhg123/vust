@@ -3,14 +3,16 @@ pub mod buffer;
 pub mod texture;
 pub mod pipeline;
 pub mod write_descriptor_info;
+pub mod descriptor;
 
 // expose a few ash/vk things
 pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, Format, VertexInputRate};
 use create_info::VustCreateInfo;
+use descriptor::Descriptor;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use pipeline::GraphicsPipeline;
 use write_descriptor_info::WriteDescriptorInfo;
-use std::{collections::HashMap, ffi::{CStr, CString}};
+use std::ffi::{CStr, CString};
 use ash::{extensions, vk};
 
 pub struct Vust {
@@ -628,14 +630,14 @@ impl Vust {
         }
     }
 
-    pub fn bind_descriptor_set(&self, pipeline: &GraphicsPipeline) {
+    pub fn bind_descriptor_set(&self, pipeline: &GraphicsPipeline, descriptor: &Descriptor) {
         unsafe {
             self.device.cmd_bind_descriptor_sets(
                 self.draw_command_buffers[self.current_frame],
                 vk::PipelineBindPoint::GRAPHICS,
                 pipeline.pipeline_layout(),
                 0,
-                &[pipeline.descriptor_sets().unwrap()[self.current_frame]],
+                &[descriptor.descriptor_set[self.current_frame]],
                 &[]
             );
         }
@@ -720,9 +722,9 @@ impl Vust {
         }
     }
 
-    pub fn update_descriptor_set(&self, pipeline: &GraphicsPipeline, write_descriptor_infos: &[WriteDescriptorInfo]) {
+    pub fn update_descriptor_set(&self, descriptor: &Descriptor, write_descriptor_infos: &[WriteDescriptorInfo]) {
         unsafe {
-            let mut write_descriptor_info = pipeline.write_descriptor_set_infos()
+            let mut write_descriptor_info = descriptor.write_descriptor_set_info
                 .iter()
                 .map(|write_descriptor_infos| write_descriptor_infos[self.current_frame])
                 .collect::<Vec<_>>();

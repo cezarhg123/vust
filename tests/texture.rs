@@ -4,7 +4,7 @@ use std::{io::Cursor, mem::size_of, ptr::null};
 use ash::vk;
 use glfw::fail_on_errors;
 use image::GenericImageView;
-use vust::{buffer::Buffer, create_info::VustCreateInfo, pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline}, texture::Texture, write_descriptor_info::WriteDescriptorInfo, Vust};
+use vust::{buffer::Buffer, create_info::VustCreateInfo, descriptor::Descriptor, pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline}, texture::Texture, write_descriptor_info::WriteDescriptorInfo, Vust};
 use winapi::um::libloaderapi::GetModuleHandleW;
 
 #[test]
@@ -74,6 +74,8 @@ fn texture() {
         }
     );
 
+    let descriptor = pipeline.create_descriptor(&mut vust).unwrap();
+
     let rect_buffer = Buffer::builder()
         .with_name("Rect Vertex Buffer")
         .with_usage(vk::BufferUsageFlags::VERTEX_BUFFER)
@@ -111,8 +113,8 @@ fn texture() {
         vust.bind_pipeline(pipeline.handle());
         vust.bind_viewport(vk::Viewport { x: 0.0, y: 0.0, width: 800.0, height: 600.0, min_depth: 0.0, max_depth: 1.0 });
         vust.bind_scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: 800, height: 600 } });
-        vust.update_descriptor_set(&pipeline, &[WriteDescriptorInfo::Image { image_view: texture.view(), sampler: texture.sampler() }]);
-        vust.bind_descriptor_set(&pipeline);
+        vust.update_descriptor_set(&descriptor, &[WriteDescriptorInfo::Image { image_view: texture.view(), sampler: texture.sampler() }]);
+        vust.bind_descriptor_set(&pipeline, &descriptor);
         vust.bind_vertex_buffer(rect_buffer.handle());
         vust.bind_index_buffer(index_buffer.handle());
         vust.draw_indexed(6);

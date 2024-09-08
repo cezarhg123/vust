@@ -120,6 +120,8 @@ fn texture_and_triangle() {
             )
         }
     );
+
+    let descriptor = texture_pipeline.create_descriptor(&mut vust).unwrap();
     
     let rect_buffer = Buffer::builder()
         .with_name("Rect Vertex Buffer")
@@ -163,8 +165,8 @@ fn texture_and_triangle() {
         vust.bind_pipeline(texture_pipeline.handle());
         vust.bind_viewport(vk::Viewport { x: 0.0, y: 0.0, width: 800.0, height: 600.0, min_depth: 0.0, max_depth: 1.0 });
         vust.bind_scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: 800, height: 600 } });
-        vust.update_descriptor_set(&texture_pipeline, &[WriteDescriptorInfo::Image { image_view: texture.view(), sampler: texture.sampler() }]);
-        vust.bind_descriptor_set(&texture_pipeline);
+        vust.update_descriptor_set(&descriptor, &[WriteDescriptorInfo::Image { image_view: texture.view(), sampler: texture.sampler() }]);
+        vust.bind_descriptor_set(&texture_pipeline, &descriptor);
         vust.bind_vertex_buffer(rect_buffer.handle());
         vust.bind_index_buffer(index_buffer.handle());
         vust.draw_indexed(6);

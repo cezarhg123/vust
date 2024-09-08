@@ -2,12 +2,12 @@ pub use vk::{PrimitiveTopology, PolygonMode, DescriptorType, ShaderStageFlags};
 
 use std::ffi::CString;
 use ash::vk::{self, VertexInputAttributeDescription, VertexInputBindingDescription};
-use crate::Vust;
+use crate::{descriptor::Descriptor, Vust};
 
 pub struct GraphicsPipeline {
-    descriptor_pool: Option<vk::DescriptorPool>,
-    descriptor_sets: Option<[vk::DescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT]>,
-    write_descriptor_set_infos: Vec<[vk::WriteDescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT]>,
+    descriptor_pool_create_info: Option<vk::DescriptorPoolCreateInfo>,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    write_descriptor_set_info: Vec<[vk::WriteDescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT]>,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline
 }
@@ -202,51 +202,34 @@ impl GraphicsPipeline {
                 None
             ).unwrap()[0];
 
-            let descriptor_pool = if let Some(descriptor_set_layout) = &create_info.descriptor_set_layout {
-                Some(vust.device.create_descriptor_pool(
-                    &vk::DescriptorPoolCreateInfo::builder()
-                        .max_sets(Vust::MAX_FRAMES_IN_FLIGHT as u32)
-                        .pool_sizes(
-                            &descriptor_set_layout.bindings
-                                .iter()
-                                .map(|bindings| {
-                                    vk::DescriptorPoolSize::builder()
-                                        .ty(bindings.descriptor_type)
-                                        .descriptor_count(Vust::MAX_FRAMES_IN_FLIGHT as u32)
-                                        .build()
-                                })
-                                .collect::<Vec<_>>()
-                        )
-                        .build(),
-                    None
-                ).unwrap())
+            let descriptor_pool_create_info = if let Some(descriptor_set_layout) = &create_info.descriptor_set_layout {
+                Some(vk::DescriptorPoolCreateInfo::builder()
+                    .max_sets(Vust::MAX_FRAMES_IN_FLIGHT as u32)
+                    .pool_sizes(
+                        &descriptor_set_layout.bindings
+                            .iter()
+                            .map(|bindings| {
+                                vk::DescriptorPoolSize::builder()
+                                    .ty(bindings.descriptor_type)
+                                    .descriptor_count(Vust::MAX_FRAMES_IN_FLIGHT as u32)
+                                    .build()
+                            })
+                            .collect::<Vec<_>>()
+                    )
+                    .build())
             } else {
                 None
             };
 
-            let descriptor_sets: Option<[vk::DescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT]> = if let Some(descriptor_pool) = descriptor_pool {
-                Some(vust.device.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::builder()
-                    .descriptor_pool(descriptor_pool)
-                    .set_layouts(&[descriptor_set_layout; Vust::MAX_FRAMES_IN_FLIGHT])
-                    .build()
-                ).unwrap().try_into().unwrap())
-            } else {
-                None
-            };
-
-            let write_descriptor_set_infos = if let Some(descriptor_set_layout) = create_info.descriptor_set_layout {
+            let write_descriptor_set_info = if let Some(descriptor_set_layout) = create_info.descriptor_set_layout {
                 descriptor_set_layout.bindings.iter().enumerate().map(|(i, descriptor_set_binding)| {
-                    let mut writes = [   
+                    let writes = [   
                         vk::WriteDescriptorSet::builder()
                             .dst_binding(i as u32)
                             .dst_array_element(0)
                             .descriptor_type(descriptor_set_binding.descriptor_type)
-                            .build(); 2
+                            .build(); Vust::MAX_FRAMES_IN_FLIGHT
                     ];
-
-                    for i in 0..Vust::MAX_FRAMES_IN_FLIGHT {
-                        writes[i].dst_set = descriptor_sets.unwrap()[i];
-                    }
 
                     writes
                 }).collect::<Vec<_>>()
@@ -255,12 +238,41 @@ impl GraphicsPipeline {
             };
 
             GraphicsPipeline {
-                descriptor_pool,
-                descriptor_sets,
-                write_descriptor_set_infos,
+                descriptor_pool_create_info,
+                descriptor_set_layout,
+                write_descriptor_set_info,
                 pipeline_layout,
                 pipeline
             }
+        }
+    }
+
+    pub fn create_descriptor(&self, vust: &mut Vust) -> Option<Descriptor> {
+        unsafe {
+            let descriptor_pool = vust.device.create_descriptor_pool(
+                &self.descriptor_pool_create_info?,
+                None
+            ).ok()?;
+
+            let descriptor_set: [vk::DescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT] = vust.device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::builder()
+                    .descriptor_pool(descriptor_pool)
+                    .set_layouts(&[self.descriptor_set_layout; Vust::MAX_FRAMES_IN_FLIGHT])
+            ).unwrap().try_into().unwrap();
+            
+            let write_descriptor_set_info = self.write_descriptor_set_info.clone().into_iter().map(|mut write_descriptor_infos| {
+                for i in 0..Vust::MAX_FRAMES_IN_FLIGHT {
+                    write_descriptor_infos[i].dst_set = descriptor_set[i];
+                }
+
+                write_descriptor_infos
+            }).collect::<Vec<_>>();
+
+            Some(Descriptor {
+                descriptor_pool,
+                descriptor_set,
+                write_descriptor_set_info
+            })
         }
     }
 
@@ -270,14 +282,6 @@ impl GraphicsPipeline {
 
     pub fn pipeline_layout(&self) -> vk::PipelineLayout {
         self.pipeline_layout
-    }
-
-    pub fn descriptor_sets(&self) -> Option<[vk::DescriptorSet; Vust::MAX_FRAMES_IN_FLIGHT]> {
-        self.descriptor_sets
-    }
-
-    pub fn write_descriptor_set_infos(&self) -> &[[vk::WriteDescriptorSet; 2]] {
-        &self.write_descriptor_set_infos
     }
 }
 
