@@ -28,6 +28,7 @@ impl Texture {
     pub fn destroy(&mut self, vust: &mut Vust) {
         if !self.destroyed {
             unsafe {
+                self.destroyed = true;
                 vust.device.destroy_image(self.image, None);
                 vust.memory_allocator.free(self.allocation.take().unwrap()).unwrap();
                 vust.device.destroy_image_view(self.view, None);
