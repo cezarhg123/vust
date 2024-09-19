@@ -758,12 +758,12 @@ impl Vust {
                 .collect::<Vec<BufferOrImageInfo>>();
 
             for (i, write_descriptor_info) in write_descriptor_info.iter_mut().enumerate() {
-                match infos[i] {
+                match &infos[i] {
                     BufferOrImageInfo::Buffer(buffer) => {
-                        write_descriptor_info.p_buffer_info = &buffer;
+                        write_descriptor_info.p_buffer_info = buffer;
                     }
                     BufferOrImageInfo::Image(image) => {
-                        write_descriptor_info.p_image_info = &image;
+                        write_descriptor_info.p_image_info = image;
                     }
                 }
                 write_descriptor_info.descriptor_count = 1;
