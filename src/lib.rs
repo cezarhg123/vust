@@ -6,7 +6,8 @@ pub mod write_descriptor_info;
 pub mod descriptor;
 
 // expose a few ash/vk things
-pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, Format, VertexInputRate};
+pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, Format, VertexInputRate, CommandPool};
+pub use ash::Device;
 use create_info::VustCreateInfo;
 use descriptor::Descriptor;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
@@ -562,6 +563,14 @@ impl Vust {
                 memory_allocator: Arc::new(Mutex::new(memory_allocator))
             }
         }
+    }
+
+    pub fn get_device(&self) -> ash::Device {
+        self.device.clone()
+    }
+
+    pub fn get_memory_allocator(&self) -> Arc<Mutex<Allocator>> {
+        self.memory_allocator.clone()
     }
 
     pub fn reset_command_buffer(&mut self) {
