@@ -4,7 +4,7 @@ use std::{io::Cursor, mem::size_of, ptr::null};
 use ash::vk;
 use glfw::fail_on_errors;
 use image::GenericImageView;
-use vust::{buffer::Buffer, create_info::VustCreateInfo, descriptor::Descriptor, pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline}, texture::Texture, write_descriptor_info::WriteDescriptorInfo, Vust};
+use vust::{buffer::Buffer, create_info::VustCreateInfo, pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline}, texture::Texture, write_descriptor_info::WriteDescriptorInfo, Vust};
 use winapi::um::libloaderapi::GetModuleHandleW;
 
 #[test]

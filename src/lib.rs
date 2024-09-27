@@ -12,7 +12,7 @@ use descriptor::Descriptor;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use pipeline::GraphicsPipeline;
 use write_descriptor_info::WriteDescriptorInfo;
-use std::ffi::{CStr, CString};
+use std::{ffi::{CStr, CString}, sync::{Arc, Mutex}};
 use ash::{extensions, vk};
 
 pub struct Vust {
@@ -55,7 +55,7 @@ pub struct Vust {
     current_frame: usize,
     image_index: u32,
 
-    memory_allocator: Allocator
+    memory_allocator: Arc<Mutex<Allocator>>
 }
 
 impl Vust {
@@ -559,7 +559,7 @@ impl Vust {
                 current_frame: 0,
                 image_index: 0,
             
-                memory_allocator
+                memory_allocator: Arc::new(Mutex::new(memory_allocator))
             }
         }
     }

@@ -1,8 +1,8 @@
 pub use vk::{BufferUsageFlags, MemoryPropertyFlags};
 
-use std::mem::size_of_val;
-use ash::vk::{self, Handle};
-use gpu_allocator::{vulkan::{Allocation, AllocationCreateDesc, AllocationScheme}, MemoryLocation};
+use std::{mem::size_of_val, sync::{Arc, Mutex}};
+use ash::vk;
+use gpu_allocator::{vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator}, MemoryLocation};
 use crate::Vust;
 
 pub struct Buffer {
@@ -40,14 +40,18 @@ impl Buffer {
         }
     }
 
-    pub fn destroy(&mut self, vust: &mut Vust) {
+    pub fn destroy_raw(&mut self, device: ash::Device, memory_allocator: Arc<Mutex<Allocator>>) {
         unsafe {
             if !self.destroyed {
-                vust.device.destroy_buffer(self.handle, None);
-                vust.memory_allocator.free(self.memory.take().unwrap()).unwrap();
+                device.destroy_buffer(self.handle, None);
+                memory_allocator.lock().unwrap().free(self.memory.take().unwrap()).unwrap();
                 self.destroyed = true;
             }
         }
+    }
+
+    pub fn destroy(&mut self, vust: &mut Vust) {
+        self.destroy_raw(vust.device.clone(), Arc::clone(&vust.memory_allocator));
     }
 
     pub fn handle(&self) -> vk::Buffer {
@@ -98,10 +102,12 @@ impl<'a, T> BufferBuilder<'a, T> {
         self
     }
 
+    /// Build buffer using raw handles
+    /// 
     /// currently only host visible and device local memory are supported
     /// 
     /// write_on_creation - if true, the buffer will be written to on creation
-    pub fn build(self, vust: &mut Vust, write_on_creation: bool) -> Buffer {
+    pub fn build_raw(self, device: ash::Device, memory_allocator: Arc<Mutex<Allocator>>, write_on_creation: bool) -> Buffer {
         unsafe {
             let buffer_create_info = vk::BufferCreateInfo::builder()
                 .size(size_of_val(self.data) as u64)
@@ -109,9 +115,9 @@ impl<'a, T> BufferBuilder<'a, T> {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .build();
 
-            let buffer = vust.device.create_buffer(&buffer_create_info, None).unwrap();
+            let buffer = device.create_buffer(&buffer_create_info, None).unwrap();
 
-            let memory_requirements = vust.device.get_buffer_memory_requirements(buffer);
+            let memory_requirements = device.get_buffer_memory_requirements(buffer);
             
             let location = if self.memory_location.contains(vk::MemoryPropertyFlags::HOST_VISIBLE) {
                 MemoryLocation::CpuToGpu
@@ -132,9 +138,9 @@ impl<'a, T> BufferBuilder<'a, T> {
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged
             };
             
-            let memory = vust.memory_allocator.allocate(&memory_allocate_info).unwrap();
+            let memory = memory_allocator.lock().unwrap().allocate(&memory_allocate_info).unwrap();
 
-            vust.device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
+            device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
 
             if write_on_creation {
                 memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(self.data.as_ptr(), self.data.len());
@@ -149,5 +155,14 @@ impl<'a, T> BufferBuilder<'a, T> {
                 destroyed: false
             }
         }
+    }
+
+    /// Build buffer by passing Vust instance
+    /// 
+    /// currently only host visible and device local memory are supported
+    /// 
+    /// write_on_creation - if true, the buffer will be written to on creation
+    pub fn build(self, vust: &mut Vust, write_on_creation: bool) -> Buffer {
+        self.build_raw(vust.device.clone(), Arc::clone(&vust.memory_allocator), write_on_creation)
     }
 }

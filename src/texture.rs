@@ -30,7 +30,7 @@ impl Texture {
             unsafe {
                 self.destroyed = true;
                 vust.device.destroy_image(self.image, None);
-                vust.memory_allocator.free(self.allocation.take().unwrap()).unwrap();
+                vust.memory_allocator.lock().unwrap().free(self.allocation.take().unwrap()).unwrap();
                 vust.device.destroy_image_view(self.view, None);
                 vust.device.destroy_sampler(self.sampler, None);
             }
@@ -145,7 +145,7 @@ impl<'a> TextureBuilder<'a> {
                 #[cfg(not(debug_assertions))]
                 let name = "texture";
 
-                let allocation = vust.memory_allocator.allocate(
+                let allocation = vust.memory_allocator.lock().unwrap().allocate(
                     &AllocationCreateDesc {
                         name,
                         requirements,
