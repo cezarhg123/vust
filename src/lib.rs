@@ -8,9 +8,10 @@ pub mod descriptor;
 // expose a few ash/vk things
 pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, Format, VertexInputRate, CommandPool};
 pub use ash::Device;
+pub use gpu_allocator::vulkan::Allocator;
 use create_info::VustCreateInfo;
 use descriptor::Descriptor;
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use gpu_allocator::vulkan::AllocatorCreateDesc;
 use pipeline::GraphicsPipeline;
 use write_descriptor_info::WriteDescriptorInfo;
 use std::{ffi::{CStr, CString}, sync::{Arc, Mutex}};
