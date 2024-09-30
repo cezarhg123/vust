@@ -816,12 +816,12 @@ impl Vust {
     pub fn end_single_exec_command(&self, command_buffer: vk::CommandBuffer) {
         unsafe {
             self.device.end_command_buffer(command_buffer).unwrap();
-    
+            let command_buffers = [command_buffer];
             self.device.queue_submit(
                 self.queue,
                 &[
                     vk::SubmitInfo::builder()
-                        .command_buffers(&[command_buffer])
+                        .command_buffers(&command_buffers)
                         .build(),
                 ],
                 vk::Fence::null()
@@ -831,7 +831,7 @@ impl Vust {
     
             self.device.free_command_buffers(
                 self.command_pool,
-                &[command_buffer],
+                &command_buffers,
             );
         }
     }
@@ -923,7 +923,7 @@ impl Vust {
         } else {
             unreachable!()
         };
-    
+        let barriers = [barrier];
         unsafe {
             self.device.cmd_pipeline_barrier(
                 transition_command_buffer,
@@ -932,7 +932,7 @@ impl Vust {
                 vk::DependencyFlags::empty(),
                 &[],
                 &[],
-                &[barrier],
+                &barriers,
             );
         }
     

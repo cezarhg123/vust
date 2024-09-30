@@ -100,7 +100,6 @@ fn model_rect() {
         .build(&mut vust, true);
 
     let image = image::load(Cursor::new(include_bytes!("textures/green amogus.png")), image::ImageFormat::Png).unwrap();
-
     let mut texture = Texture::builder()
         .with_name("Texture Buffer")
         .with_data(image.as_bytes())

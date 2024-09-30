@@ -103,17 +103,17 @@ impl<'a> TextureBuilder<'a> {
             #[cfg(debug_assertions)]
             let mut data_buffer = Buffer::builder()
                 .with_name(&self.name)
-                .with_data(&self.data)
+                .with_data(self.data)
                 .with_memory_location(vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT)
                 .with_usage(vk::BufferUsageFlags::TRANSFER_SRC)
                 .build(vust, true);
 
             #[cfg(not(debug_assertions))]
             let mut data_buffer = Buffer::builder()
-                .with_data(&self.data)
+                .with_data(self.data)
                 .with_memory_location(vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT)
                 .with_usage(vk::BufferUsageFlags::TRANSFER_SRC)
-                .build(vust, false);
+                .build(vust, true);
 
             unsafe {
                 let image = vust.device.create_image(
@@ -159,32 +159,33 @@ impl<'a> TextureBuilder<'a> {
 
                 vust.transition_image_layout(image, vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
                 let copy_command_buffer = vust.begin_single_exec_command();
+                let regions = [
+                    vk::BufferImageCopy::builder()
+                        .buffer_offset(0)
+                        .buffer_row_length(0)
+                        .buffer_image_height(0)
+                        .image_subresource(
+                            vk::ImageSubresourceLayers::builder()
+                                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                .mip_level(0)
+                                .base_array_layer(0)
+                                .layer_count(1)
+                                .build()
+                        )
+                        .image_offset(
+                            vk::Offset3D { x: 0, y: 0, z: 0 }
+                        )
+                        .image_extent(
+                            vk::Extent3D { width: self.dimensions.0, height: self.dimensions.1, depth: 1 }
+                        )
+                        .build()
+                ];
                 vust.device.cmd_copy_buffer_to_image(
                     copy_command_buffer,
                     data_buffer.handle(),
                     image,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[
-                        vk::BufferImageCopy::builder()
-                            .buffer_offset(0)
-                            .buffer_row_length(0)
-                            .buffer_image_height(0)
-                            .image_subresource(
-                                vk::ImageSubresourceLayers::builder()
-                                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                    .mip_level(0)
-                                    .base_array_layer(0)
-                                    .layer_count(1)
-                                    .build()
-                            )
-                            .image_offset(
-                                vk::Offset3D { x: 0, y: 0, z: 0 }
-                            )
-                            .image_extent(
-                                vk::Extent3D { width: self.dimensions.0, height: self.dimensions.1, depth: 1 }
-                            )
-                            .build()
-                    ]
+                    &regions
                 );
                 vust.end_single_exec_command(copy_command_buffer);
                 vust.transition_image_layout(image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);

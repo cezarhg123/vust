@@ -137,9 +137,11 @@ impl GraphicsPipeline {
                 .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
                 .alpha_blend_op(vk::BlendOp::ADD)
                 .build();
+            
+            let attachements = [color_blend_attachment];
 
             let color_blend_info = vk::PipelineColorBlendStateCreateInfo::builder()
-                .attachments(&[color_blend_attachment])
+                .attachments(&attachements)
                 .logic_op_enable(true)
                 .logic_op(vk::LogicOp::COPY)
                 .blend_constants([0.0, 0.0, 0.0, 0.0])
@@ -159,8 +161,8 @@ impl GraphicsPipeline {
             };
 
             let descriptor_set_layout = vust.device.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::builder().bindings(&bindings).build(), None).unwrap();
-
-            let pipeline_layout = vust.device.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::builder().set_layouts(&[descriptor_set_layout]).build(), None).unwrap();
+            let descriptor_set_layouts = [descriptor_set_layout];
+            let pipeline_layout = vust.device.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::builder().set_layouts(&descriptor_set_layouts).build(), None).unwrap();
 
             let mut dynamic_states = Vec::new();
 
