@@ -54,54 +54,64 @@ impl GraphicsPipeline {
                 .primitive_restart_enable(false)
                 .build();
 
+            // doing this cuz release build deletes &[viewport] out of existence
+            let mut hold_viewport = None;
+            let mut hold_scissor = None;
             // absolute unit of a match statement
             let viewport_state_info = match (create_info.viewport.clone(), create_info.scissor.clone()) {
                 (Viewport::Dynamic, Scissor::Dynamic) => {
                     vk::PipelineViewportStateCreateInfo::builder().viewport_count(1).scissor_count(1).build()
                 }
                 (Viewport::Dynamic, Scissor::Static { x, y, width, height }) => {
+                    hold_scissor = Some([
+                        vk::Rect2D {
+                            offset: vk::Offset2D { x, y },
+                            extent: vk::Extent2D { width, height }
+                        }
+                    ]);
+                    
                     vk::PipelineViewportStateCreateInfo::builder()
                         .viewport_count(1)
-                        .scissors(&[
-                            vk::Rect2D {
-                                offset: vk::Offset2D { x, y },
-                                extent: vk::Extent2D { width, height }
-                            }
-                        ])
+                        .scissors(hold_scissor.as_ref().unwrap())
                         .build()
                 }
                 (Viewport::Static { x, y, width, height, min_depth, max_depth }, Scissor::Dynamic) => {
+                    hold_viewport = Some([
+                        vk::Viewport {
+                            x,
+                            y,
+                            width,
+                            height,
+                            min_depth,
+                            max_depth
+                        }
+                    ]);
                     vk::PipelineViewportStateCreateInfo::builder()
-                        .viewports(&[
-                            vk::Viewport {
-                                x,
-                                y,
-                                width,
-                                height,
-                                min_depth,
-                                max_depth
-                            }
-                        ])
+                        .viewports(hold_viewport.as_ref().unwrap())
                         .scissor_count(1)
                         .build()
                 }
                 (Viewport::Static { x: v_x, y: v_y, width: v_width, height: v_height, min_depth: v_min_depth, max_depth: v_max_depth }, Scissor::Static { x: s_x, y: s_y, width: s_width, height: s_height }) => {
+                    hold_viewport = Some([
+                        vk::Viewport {
+                            x: v_x,
+                            y: v_y,
+                            width: v_width,
+                            height: v_height,
+                            min_depth: v_min_depth,
+                            max_depth: v_max_depth
+                        }
+                    ]);
+                    hold_scissor = Some([
+                        vk::Rect2D {
+                            offset: vk::Offset2D { x: s_x, y: s_y },
+                            extent: vk::Extent2D { width: s_width, height: s_height }
+                        }
+                    ]);
+                    
                     vk::PipelineViewportStateCreateInfo::builder()
-                        .viewports(&[
-                            vk::Viewport {
-                                x: v_x,
-                                y: v_y,
-                                width: v_width,
-                                height: v_height,
-                                min_depth: v_min_depth,
-                                max_depth: v_max_depth
-                            }
-                        ]).scissors(&[
-                            vk::Rect2D {
-                                offset: vk::Offset2D { x: s_x, y: s_y },
-                                extent: vk::Extent2D { width: s_width, height: s_height }
-                            }
-                        ])
+                        .viewports(hold_viewport.as_ref().unwrap())
+                        .scissors(hold_scissor.as_ref().unwrap())
                         .build()
                 }
             };

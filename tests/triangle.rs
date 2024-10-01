@@ -57,8 +57,20 @@ fn triangle() {
                     .build()
             ],
             topology: vk::PrimitiveTopology::TRIANGLE_LIST,
-            viewport: vust::pipeline::Viewport::Dynamic,
-            scissor: vust::pipeline::Scissor::Dynamic,
+            viewport: vust::pipeline::Viewport::Static {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+                min_depth: 0.0,
+                max_depth: 1.0
+            },
+            scissor: vust::pipeline::Scissor::Static {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600
+            },
             polygon_mode: vk::PolygonMode::FILL,
             cull_mode: vust::pipeline::CullMode::None,
             descriptor_set_layout: None
@@ -81,8 +93,6 @@ fn triangle() {
 
         vust.reset_command_buffer();
         vust.bind_pipeline(pipeline.handle());
-        vust.bind_viewport(vk::Viewport { x: 0.0, y: 0.0, width: 800.0, height: 600.0, min_depth: 0.0, max_depth: 1.0 });
-        vust.bind_scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: 800, height: 600 } });
         vust.bind_vertex_buffer(triangle_buffer.handle());
         vust.draw(3);
         vust.render_surface();
