@@ -132,9 +132,5 @@ fn model_rect() {
         vust.render_surface();
     }
 
-    vust.wait_idle();
-    texture.destroy(&mut vust);
-    model_uniform_buffer.destroy(&mut vust);
-    rect_buffer.destroy(&mut vust);
-    index_buffer.destroy(&mut vust);
+    vust.wait_idle(); 
 }

@@ -1,7 +1,8 @@
 pub use vk::{Format, Filter};
 
+use std::sync::{Arc, Mutex};
 use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
 use crate::{buffer::Buffer, Vust};
 
 pub struct Texture {
@@ -10,7 +11,8 @@ pub struct Texture {
     view: vk::ImageView,
     sampler: vk::Sampler,
     descriptor_info: vk::DescriptorImageInfo,
-    destroyed: bool
+    vust_device: ash::Device,
+    vust_memory_allocator: Arc<Mutex<Allocator>>
 }
 
 impl Texture {
@@ -25,18 +27,6 @@ impl Texture {
         }
     }
 
-    pub fn destroy(&mut self, vust: &mut Vust) {
-        if !self.destroyed {
-            unsafe {
-                self.destroyed = true;
-                vust.device.destroy_image(self.image, None);
-                vust.memory_allocator.lock().unwrap().free(self.allocation.take().unwrap()).unwrap();
-                vust.device.destroy_image_view(self.view, None);
-                vust.device.destroy_sampler(self.sampler, None);
-            }
-        }
-    }
-
     pub fn view(&self) -> vk::ImageView {
         self.view
     }
@@ -48,8 +38,11 @@ impl Texture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        if !self.destroyed {
-            panic!("texture was not destroyed");
+        unsafe {
+            self.vust_device.destroy_image(self.image, None);
+            self.vust_memory_allocator.lock().unwrap().free(self.allocation.take().unwrap()).unwrap();
+            self.vust_device.destroy_image_view(self.view, None);
+            self.vust_device.destroy_sampler(self.sampler, None);
         }
     }
 }
@@ -234,15 +227,14 @@ impl<'a> TextureBuilder<'a> {
                     .sampler(sampler)
                     .build();
 
-                data_buffer.destroy(vust);
-
                 Some(Texture {
                     image,
                     allocation: Some(allocation),
                     view,
                     sampler,
                     descriptor_info,
-                    destroyed: false
+                    vust_device: vust.device.clone(),
+                    vust_memory_allocator: Arc::clone(&vust.memory_allocator)
                 })
             }
         }
