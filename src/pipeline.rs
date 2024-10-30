@@ -262,7 +262,7 @@ impl GraphicsPipeline {
         }
     }
 
-    pub fn create_descriptor(&self, vust: &mut Vust) -> Option<Descriptor> {
+    pub fn create_descriptor(&self, vust: &Vust) -> Option<Descriptor> {
         unsafe {
             let descriptor_pool = vust.device.create_descriptor_pool(
                 &self.descriptor_pool_create_info.as_ref()?.0,
