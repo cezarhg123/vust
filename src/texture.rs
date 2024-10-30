@@ -89,7 +89,7 @@ impl<'a> TextureBuilder<'a> {
     }
 
     /// Returns None if data is empty
-    pub fn build(self, vust: &mut Vust) -> Option<Texture> {
+    pub fn build(self, vust: &Vust) -> Option<Texture> {
         if self.data.is_empty() {
             return None;
         } else {
