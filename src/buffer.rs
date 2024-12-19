@@ -1,7 +1,7 @@
 pub use vk::{BufferUsageFlags, MemoryPropertyFlags};
 
 use std::{mem::size_of_val, sync::{Arc, Mutex}};
-use ash::vk;
+use ash::vk::{self, Handle};
 use gpu_allocator::{vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator}, MemoryLocation};
 use crate::Vust;
 
@@ -11,8 +11,7 @@ pub struct Buffer {
     handle: vk::Buffer,
     memory: Option<Allocation>,
     usage: vk::BufferUsageFlags,
-    vust_device: ash::Device,
-    vust_memory_allocator: Arc<Mutex<Allocator>>
+    vust: Vust
 }
 
 impl Buffer {
@@ -48,12 +47,14 @@ impl Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        unsafe {
-            self.vust_device.destroy_buffer(self.handle, None);
+        if self.usage.contains(vk::BufferUsageFlags::VERTEX_BUFFER) || self.usage.contains(vk::BufferUsageFlags::INDEX_BUFFER) || self.usage.contains(vk::BufferUsageFlags::UNIFORM_BUFFER) {
+            self.vust.free_drawing_memory(self.memory.take().unwrap());
+        } else {
+            self.vust.free_memory(self.memory.take().unwrap());
+        }
 
-            if let Some(memory) = self.memory.take() {
-                self.vust_memory_allocator.lock().unwrap().free(memory).unwrap();
-            }
+        unsafe {
+            self.vust.device.destroy_buffer(self.handle, None);
         }
     }
 }
@@ -97,8 +98,6 @@ impl<'a, T> BufferBuilder<'a, T> {
     /// 
     /// write_on_creation - if true, the buffer will be written to on creation
     pub fn build(self, vust: &Vust, write_on_creation: bool) -> Buffer {
-        let device = vust.device.clone();
-        let memory_allocator = Arc::clone(&vust.memory_allocator);
         unsafe {
             let buffer_create_info = vk::BufferCreateInfo::builder()
                 .size(size_of_val(self.data) as u64)
@@ -106,9 +105,9 @@ impl<'a, T> BufferBuilder<'a, T> {
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
                 .build();
 
-            let buffer = device.create_buffer(&buffer_create_info, None).unwrap();
+            let buffer = vust.device.create_buffer(&buffer_create_info, None).unwrap();
 
-            let memory_requirements = device.get_buffer_memory_requirements(buffer);
+            let memory_requirements = vust.device.get_buffer_memory_requirements(buffer);
         
             let location = if self.memory_location.contains(vk::MemoryPropertyFlags::HOST_VISIBLE) {
                 MemoryLocation::CpuToGpu
@@ -129,9 +128,9 @@ impl<'a, T> BufferBuilder<'a, T> {
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged
             };
         
-            let memory = memory_allocator.lock().unwrap().allocate(&memory_allocate_info).unwrap();
+            let memory = vust.memory_allocator.lock().unwrap().allocate(&memory_allocate_info).unwrap();
 
-            device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
+            vust.device.bind_buffer_memory(buffer, memory.memory(), memory.offset()).unwrap();
 
             if write_on_creation {
                 memory.mapped_ptr().unwrap().as_ptr().cast::<T>().copy_from_nonoverlapping(self.data.as_ptr(), self.data.len());
@@ -143,8 +142,7 @@ impl<'a, T> BufferBuilder<'a, T> {
                 handle: buffer,
                 memory: Some(memory),
                 usage: self.usage,
-                vust_device: device,
-                vust_memory_allocator: memory_allocator
+                vust: vust.clone()
             }
         }
     }

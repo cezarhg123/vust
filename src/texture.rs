@@ -1,7 +1,7 @@
 pub use vk::{Format, Filter};
 
 use std::sync::{Arc, Mutex};
-use ash::vk;
+use ash::vk::{self, Handle};
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, Allocator};
 use crate::{buffer::Buffer, Vust};
 
@@ -11,8 +11,7 @@ pub struct Texture {
     view: vk::ImageView,
     sampler: vk::Sampler,
     descriptor_info: vk::DescriptorImageInfo,
-    vust_device: ash::Device,
-    vust_memory_allocator: Arc<Mutex<Allocator>>
+    vust: Vust
 }
 
 impl Texture {
@@ -38,11 +37,11 @@ impl Texture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
+        self.vust.free_drawing_memory(self.allocation.take().unwrap());
         unsafe {
-            self.vust_device.destroy_image(self.image, None);
-            self.vust_memory_allocator.lock().unwrap().free(self.allocation.take().unwrap()).unwrap();
-            self.vust_device.destroy_image_view(self.view, None);
-            self.vust_device.destroy_sampler(self.sampler, None);
+            self.vust.device.destroy_image(self.image, None);
+            self.vust.device.destroy_image_view(self.view, None);
+            self.vust.device.destroy_sampler(self.sampler, None);
         }
     }
 }
@@ -233,8 +232,7 @@ impl<'a> TextureBuilder<'a> {
                     view,
                     sampler,
                     descriptor_info,
-                    vust_device: vust.device.clone(),
-                    vust_memory_allocator: Arc::clone(&vust.memory_allocator)
+                    vust: vust.clone()
                 })
             }
         }
