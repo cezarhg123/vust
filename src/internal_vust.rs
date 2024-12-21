@@ -540,11 +540,7 @@ impl InternalVust {
         match command {
             VustCommand::KYS => { /* handled outside this function */ },
 
-            VustCommand::DestroyDrawingMemory { allocation } => self.destroy_memory.push((0, allocation)),
-            VustCommand::DestroyMemory { allocation } => {
-                self.memory_allocator.lock().unwrap().free(allocation).unwrap();
-            },
-
+            VustCommand::DestroyMemory { allocation } => self.destroy_memory.push((0, allocation)),
             VustCommand::ResetCommandBuffer => self.reset_command_buffer(),
             VustCommand::BindPipeline { pipeline_handle } => self.bind_pipeline(pipeline_handle),
             VustCommand::BindViewport { viewport } => self.bind_viewport(viewport),

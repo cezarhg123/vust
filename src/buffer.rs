@@ -47,11 +47,7 @@ impl Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        if self.usage.contains(vk::BufferUsageFlags::VERTEX_BUFFER) || self.usage.contains(vk::BufferUsageFlags::INDEX_BUFFER) || self.usage.contains(vk::BufferUsageFlags::UNIFORM_BUFFER) {
-            self.vust.free_drawing_memory(self.memory.take().unwrap());
-        } else {
-            self.vust.free_memory(self.memory.take().unwrap());
-        }
+        self.vust.free_memory(self.memory.take().unwrap());
 
         unsafe {
             self.vust.device.destroy_buffer(self.handle, None);

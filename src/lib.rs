@@ -87,12 +87,6 @@ impl Vust {
         }
     }
 
-    /// Free memory that was used for drawing (vertex/index/uniform buffers)
-    pub(crate) fn free_drawing_memory(&self, allocation: Allocation) {
-        self.vust_sender.send(VustCommand::DestroyDrawingMemory { allocation }).unwrap();
-    }
-
-    /// Free memory that wasnt used in for drawing (vertex/index/uniform buffers)
     pub(crate) fn free_memory(&self, allocation: Allocation) {
         self.vust_sender.send(VustCommand::DestroyMemory { allocation }).unwrap();
     }

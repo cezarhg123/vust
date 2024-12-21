@@ -5,11 +5,6 @@ use crate::{descriptor::Descriptor, write_descriptor_info::WriteDescriptorInfo};
 pub enum VustCommand {
     KYS, // kill yourself
 
-    /// Destroy memory that was used buffers in rendering
-    DestroyDrawingMemory {
-        allocation: Allocation,
-    },
-    /// Destroy memory that wasnt used in for rendering
     DestroyMemory {
         allocation: Allocation
     },
