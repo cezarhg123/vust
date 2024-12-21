@@ -77,7 +77,7 @@ impl InternalVust {
                 #[cfg(debug_assertions)]
                 let enabled_layers = [CString::new("VK_LAYER_KHRONOS_validation").unwrap()];
                 #[cfg(not(debug_assertions))]
-                let enabled_layers = [];
+                let enabled_layers: [CString; 0] = [];
                 let enabled_layer_ptrs = enabled_layers.iter().map(|layer| layer.as_ptr()).collect::<Vec<_>>();
 
                 let instance_info = vk::InstanceCreateInfo::builder()

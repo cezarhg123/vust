@@ -6,13 +6,9 @@ pub struct VustCreateInfo {
     pub(super) app_name: CString,
     /// app_version must be given from vust::make_api_version()
     pub(super) app_version: u32,
-
     pub(super) enabled_instance_extensions: Vec<CString>,
-
     pub(super) choose_physical_device: fn(PhysicalDevice) -> bool,
-
     pub(super) surface_create_info: SurfaceCreateInfo,
-    
     pub(super) framebuffer_size: (usize, usize)
 }
 
