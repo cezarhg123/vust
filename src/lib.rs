@@ -87,8 +87,12 @@ impl Vust {
         }
     }
 
-    pub(crate) fn free_memory(&self, allocation: Allocation) {
-        self.vust_sender.send(VustCommand::DestroyMemory { allocation }).unwrap();
+    pub fn destroy_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
+        self.vust_sender.send(VustCommand::DestroyBuffer { buffer, allocation }).unwrap();
+    }
+
+    pub fn destroy_texture(&self, image: vk::Image, view: vk::ImageView, sampler: vk::Sampler, allocation: Allocation) {
+        self.vust_sender.send(VustCommand::DestroyTexture { image, view, sampler, allocation }).unwrap();
     }
 
     pub fn reset_command_buffer(&self) {

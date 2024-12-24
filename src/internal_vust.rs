@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ffi::{CStr, CString}, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex}};
 use ash::{extensions, vk};
 use gpu_allocator::vulkan::{Allocation, Allocator, AllocatorCreateDesc};
-use crate::{create_info::{self, VustCreateInfo}, descriptor::Descriptor, pipeline::GraphicsPipeline, vust_command::VustCommand, write_descriptor_info::WriteDescriptorInfo, Vust};
+use crate::{create_info::{self, VustCreateInfo}, descriptor::Descriptor, pipeline::GraphicsPipeline, vust_command::{DestroyBuffer, DestroyTexture, VustCommand}, write_descriptor_info::WriteDescriptorInfo, Vust};
 
 pub(super) struct InternalVust {
     entry: ash::Entry,
@@ -44,7 +44,8 @@ pub(super) struct InternalVust {
     image_index: u32,
 
     memory_allocator: Arc<Mutex<Allocator>>,
-    destroy_memory: Vec<(usize, Allocation)>
+    destroy_buffers: Vec<(u8, DestroyBuffer)>,
+    destroy_textures: Vec<(u8, DestroyTexture)>
 }
 
 impl InternalVust {
@@ -531,7 +532,8 @@ impl InternalVust {
                 image_index: 0,
             
                 memory_allocator: Arc::new(Mutex::new(memory_allocator)),
-                destroy_memory: Vec::new()
+                destroy_buffers: Vec::new(),
+                destroy_textures: Vec::new()
             }
         }
     }
@@ -540,7 +542,13 @@ impl InternalVust {
         match command {
             VustCommand::KYS => { /* handled outside this function */ },
 
-            VustCommand::DestroyMemory { allocation } => self.destroy_memory.push((0, allocation)),
+            VustCommand::DestroyBuffer { buffer, allocation } => {
+                self.destroy_buffers.push((0, DestroyBuffer { buffer, allocation }));
+            },
+            VustCommand::DestroyTexture { image, view, sampler, allocation } => {
+                self.destroy_textures.push((0, DestroyTexture { image, view, sampler, allocation }));
+            },
+
             VustCommand::ResetCommandBuffer => self.reset_command_buffer(),
             VustCommand::BindPipeline { pipeline_handle } => self.bind_pipeline(pipeline_handle),
             VustCommand::BindViewport { viewport } => self.bind_viewport(viewport),
@@ -564,13 +572,22 @@ impl InternalVust {
 
             // destroy memory
             let mut memory_allocator = self.memory_allocator.lock().unwrap();
-            let destroy_memory = std::mem::take(&mut self.destroy_memory);
+            let destroy_buffers = std::mem::take(&mut self.destroy_buffers);
+            let destroy_textures = std::mem::take(&mut self.destroy_textures);
             // skip 3 frames before freeing the memory, the buffer shouldnt be used in rendering after 3 frames
-            for (frames_skipped, allocation) in destroy_memory {
-                if frames_skipped == 3 {
-                    memory_allocator.free(allocation).unwrap();
+            for (frame, destroy_buffer) in destroy_buffers {
+                if frame == 3 {
+                    memory_allocator.free(destroy_buffer.allocation).unwrap();
                 } else {
-                    self.destroy_memory.push((frames_skipped + 1, allocation));
+                    self.destroy_buffers.push((frame + 1, destroy_buffer));
+                }
+            }
+
+            for (frame, destroy_texture) in destroy_textures {
+                if frame == 3 {
+                    memory_allocator.free(destroy_texture.allocation).unwrap();
+                } else {
+                    self.destroy_textures.push((frame + 1, destroy_texture));
                 }
             }
 

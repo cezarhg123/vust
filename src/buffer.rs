@@ -47,11 +47,7 @@ impl Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        self.vust.free_memory(self.memory.take().unwrap());
-
-        unsafe {
-            self.vust.device.destroy_buffer(self.handle, None);
-        }
+        self.vust.destroy_buffer(self.handle, self.memory.take().unwrap());
     }
 }
 

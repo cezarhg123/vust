@@ -37,12 +37,7 @@ impl Texture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        self.vust.free_memory(self.allocation.take().unwrap());
-        unsafe {
-            self.vust.device.destroy_image(self.image, None);
-            self.vust.device.destroy_image_view(self.view, None);
-            self.vust.device.destroy_sampler(self.sampler, None);
-        }
+        self.vust.destroy_texture(self.image, self.view, self.sampler, self.allocation.take().unwrap());
     }
 }
 

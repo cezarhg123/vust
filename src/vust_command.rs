@@ -5,7 +5,14 @@ use crate::{descriptor::Descriptor, write_descriptor_info::WriteDescriptorInfo};
 pub enum VustCommand {
     KYS, // kill yourself
 
-    DestroyMemory {
+    DestroyBuffer {
+        buffer: vk::Buffer,
+        allocation: Allocation
+    },
+    DestroyTexture {
+        image: vk::Image,
+        view: vk::ImageView,
+        sampler: vk::Sampler,
         allocation: Allocation
     },
 
@@ -43,3 +50,15 @@ pub enum VustCommand {
 }
 
 unsafe impl Send for VustCommand {}
+
+pub(crate) struct DestroyBuffer {
+    pub(crate) buffer: vk::Buffer,
+    pub(crate) allocation: Allocation
+}
+
+pub(crate) struct DestroyTexture {
+    pub(crate) image: vk::Image,
+    pub(crate) view: vk::ImageView,
+    pub(crate) sampler: vk::Sampler,
+    pub(crate) allocation: Allocation
+}
