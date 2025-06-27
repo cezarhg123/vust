@@ -135,6 +135,114 @@ impl Vust {
         self.vust_sender.send(VustCommand::UpdateDescriptorSet { descriptor: descriptor.clone(), write_descriptor_infos: write_descriptor_infos.clone() }).unwrap();
     }
 
+    pub fn update_descriptor_set_once(&self, descriptor: &Descriptor, write_descriptor_infos: Vec<WriteDescriptorInfo>) {
+        // 2 unsafe blocks to write both descriptors, theres a prettier/smarter way to do this but im lazy
+
+        unsafe {
+            let mut write_descriptor_info = descriptor.write_descriptor_set_info
+                .iter()
+                .map(|write_descriptor_infos| write_descriptor_infos[0])
+                .collect::<Vec<_>>();
+
+            // im holding the infos in a vec for the duration of this function's scope to avoid ptr lifetime issues when i pass the pointer to buffer/image info into a vk::WriteDescriptorSet
+            enum BufferOrImageInfo {
+                Buffer(vk::DescriptorBufferInfo),
+                Image(vk::DescriptorImageInfo)
+            }
+
+            let infos = write_descriptor_infos
+                .iter()
+                .map(|write_descriptor_info| {
+                    match write_descriptor_info {
+                        WriteDescriptorInfo::Buffer { buffer, offset, range } => {
+                            BufferOrImageInfo::Buffer(vk::DescriptorBufferInfo::builder()
+                                .buffer(*buffer)
+                                .offset(*offset)
+                                .range(*range)
+                                .build())
+                        }
+                        WriteDescriptorInfo::Image { image_view, sampler } => {
+                            BufferOrImageInfo::Image(vk::DescriptorImageInfo::builder()
+                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                .image_view(*image_view)
+                                .sampler(*sampler)
+                                .build())
+                        }
+                    }
+                })
+                .collect::<Vec<BufferOrImageInfo>>();
+
+            for (i, write_descriptor_info) in write_descriptor_info.iter_mut().enumerate() {
+                match &infos[i] {
+                    BufferOrImageInfo::Buffer(buffer) => {
+                        write_descriptor_info.p_buffer_info = buffer;
+                    }
+                    BufferOrImageInfo::Image(image) => {
+                        write_descriptor_info.p_image_info = image;
+                    }
+                }
+                write_descriptor_info.descriptor_count = 1;
+            }
+
+            self.device.update_descriptor_sets(
+                &write_descriptor_info,
+                &[]
+            );
+        }
+
+        unsafe {
+            let mut write_descriptor_info = descriptor.write_descriptor_set_info
+                .iter()
+                .map(|write_descriptor_infos| write_descriptor_infos[1])
+                .collect::<Vec<_>>();
+
+            // im holding the infos in a vec for the duration of this function's scope to avoid ptr lifetime issues when i pass the pointer to buffer/image info into a vk::WriteDescriptorSet
+            enum BufferOrImageInfo {
+                Buffer(vk::DescriptorBufferInfo),
+                Image(vk::DescriptorImageInfo)
+            }
+
+            let infos = write_descriptor_infos
+                .iter()
+                .map(|write_descriptor_info| {
+                    match write_descriptor_info {
+                        WriteDescriptorInfo::Buffer { buffer, offset, range } => {
+                            BufferOrImageInfo::Buffer(vk::DescriptorBufferInfo::builder()
+                                .buffer(*buffer)
+                                .offset(*offset)
+                                .range(*range)
+                                .build())
+                        }
+                        WriteDescriptorInfo::Image { image_view, sampler } => {
+                            BufferOrImageInfo::Image(vk::DescriptorImageInfo::builder()
+                                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                                .image_view(*image_view)
+                                .sampler(*sampler)
+                                .build())
+                        }
+                    }
+                })
+                .collect::<Vec<BufferOrImageInfo>>();
+
+            for (i, write_descriptor_info) in write_descriptor_info.iter_mut().enumerate() {
+                match &infos[i] {
+                    BufferOrImageInfo::Buffer(buffer) => {
+                        write_descriptor_info.p_buffer_info = buffer;
+                    }
+                    BufferOrImageInfo::Image(image) => {
+                        write_descriptor_info.p_image_info = image;
+                    }
+                }
+                write_descriptor_info.descriptor_count = 1;
+            }
+
+            self.device.update_descriptor_sets(
+                &write_descriptor_info,
+                &[]
+            );
+        }
+    }
+
     pub fn render_surface(&mut self) {
         self.vust_sender.send(VustCommand::RenderSurface).unwrap();
     }
