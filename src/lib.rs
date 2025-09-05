@@ -11,7 +11,7 @@ pub mod vust_command;
 pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, Format, VertexInputRate, CommandPool};
 pub use ash::Device;
 pub use gpu_allocator::vulkan::Allocator;
-pub use vk::{Viewport, Rect2D};
+pub use vk::{Viewport, Rect2D, Offset2D, Extent2D};
 use create_info::VustCreateInfo;
 use descriptor::Descriptor;
 use gpu_allocator::vulkan::{Allocation, AllocatorCreateDesc};
