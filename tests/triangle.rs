@@ -27,7 +27,7 @@ fn triangle() {
         )
         .with_framebuffer_size((window.get_framebuffer_size().0 as usize, window.get_framebuffer_size().1 as usize));
 
-    let mut vust = Vust::new(vust_create_info);
+    let (mut vust, vust_syncer) = Vust::new(vust_create_info);
 
     let pipeline = GraphicsPipeline::new(
         &vust,
@@ -92,6 +92,7 @@ fn triangle() {
         glfw.poll_events();
 
         vust.reset_command_buffer();
+        vust_syncer.sync();
         vust.bind_pipeline(pipeline.handle());
         vust.bind_vertex_buffer(triangle_buffer.handle());
         vust.draw(3);

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::{CStr, CString}, sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex}};
+use std::{collections::HashMap, ffi::{CStr, CString}, sync::{atomic::{AtomicUsize, Ordering}, mpsc, Arc, Mutex}};
 use ash::{extensions, vk};
 use gpu_allocator::vulkan::{Allocation, Allocator, AllocatorCreateDesc};
 use crate::{create_info::{self, VustCreateInfo}, descriptor::Descriptor, pipeline::GraphicsPipeline, vust_command::{DestroyBuffer, DestroyTexture, VustCommand}, write_descriptor_info::WriteDescriptorInfo, Vust};
@@ -538,7 +538,7 @@ impl InternalVust {
         }
     }
 
-    pub fn run(&mut self, command: VustCommand) {
+    pub fn run(&mut self, command: VustCommand, vust_sync_sender: &mpsc::Sender<()>) {
         match command {
             VustCommand::KYS => { /* handled outside this function */ },
 
@@ -549,7 +549,10 @@ impl InternalVust {
                 self.destroy_textures.push((0, DestroyTexture { image, view, sampler, allocation }));
             },
 
-            VustCommand::ResetCommandBuffer => self.reset_command_buffer(),
+            VustCommand::ResetCommandBuffer => {
+                self.reset_command_buffer();
+                vust_sync_sender.send(()).unwrap();
+            },
             VustCommand::BindPipeline { pipeline_handle } => self.bind_pipeline(pipeline_handle),
             VustCommand::BindViewport { viewport } => self.bind_viewport(viewport),
             VustCommand::BindScissor { scissor } => self.bind_scissor(scissor),

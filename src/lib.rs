@@ -6,6 +6,7 @@ pub mod write_descriptor_info;
 pub mod descriptor;
 pub mod internal_vust;
 pub mod vust_command;
+pub mod vust_sync;
 
 // expose a few ash/vk things
 pub use ash::vk::{make_api_version, VertexInputBindingDescription, VertexInputAttributeDescription, Format, VertexInputRate, CommandPool};
@@ -23,6 +24,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::{ffi::{CStr, CString}, sync::{Arc, Mutex}};
 use ash::{extensions, vk};
+
+use crate::vust_sync::VustSyncer;
 
 /// This struct acts more like a handle and can be cloned and used anywhere
 #[derive(Clone)]
@@ -56,7 +59,7 @@ impl Vust {
 
     pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-    pub fn new(create_info: VustCreateInfo) -> Self {
+    pub fn new(create_info: VustCreateInfo) -> (Self, VustSyncer) {
         let mut vust = InternalVust::new(create_info);
         let device = vust.get_device();
         let memory_allocator = vust.get_memory_allocator();
@@ -65,27 +68,35 @@ impl Vust {
         let queue = vust.get_queue();
         
         let (vust_sender, vust_receiver) = mpsc::channel();
+        let (vust_sync_sender, vust_sync_receiver) = mpsc::channel::<()>();
 
         std::thread::spawn(move || {
+            // take ownership
+            let vust_sync_sender = vust_sync_sender;
             while let Ok(command) = vust_receiver.recv() {
                 match command {
                     VustCommand::KYS => {
                         vust.wait_idle();
                         break;
                     }
-                    command => vust.run(command)
+                    command => vust.run(command, &vust_sync_sender)
                 }
             }
         });
 
-        Self {
-            device,
-            memory_allocator,
-            renderpass,
-            command_pool,
-            queue,
-            vust_sender
-        }
+        (
+            Self {
+                device,
+                memory_allocator,
+                renderpass,
+                command_pool,
+                queue,
+                vust_sender
+            },
+            VustSyncer {
+                allow_messages_recv: vust_sync_receiver
+            }
+        )
     }
 
     pub fn destroy_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {

@@ -27,7 +27,7 @@ fn model_rect() {
         )
         .with_framebuffer_size((window.get_framebuffer_size().0 as usize, window.get_framebuffer_size().1 as usize));
 
-    let mut vust = Vust::new(vust_create_info);
+    let (mut vust, vust_syncer) = Vust::new(vust_create_info);
 
     let pipeline = GraphicsPipeline::new(
         &vust,
@@ -121,6 +121,7 @@ fn model_rect() {
         glfw.poll_events();
 
         vust.reset_command_buffer();
+        vust_syncer.sync();
         vust.bind_pipeline(pipeline.handle());
         vust.bind_viewport(vk::Viewport { x: 0.0, y: 0.0, width: 800.0, height: 600.0, min_depth: 0.0, max_depth: 1.0 });
         vust.bind_scissor(vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width: 800, height: 600 } });
