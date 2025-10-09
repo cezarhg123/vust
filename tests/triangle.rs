@@ -73,7 +73,8 @@ fn triangle() {
             },
             polygon_mode: vk::PolygonMode::FILL,
             cull_mode: vust::pipeline::CullMode::None,
-            descriptor_set_layout: None
+            descriptor_set_layout: None,
+            enable_depth_test: false
         }
     );
 

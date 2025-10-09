@@ -74,7 +74,8 @@ fn model_rect_single_descriptor_update() {
                         }
                     ]
                 }
-            )
+            ),
+            enable_depth_test: false
         }
     );
 

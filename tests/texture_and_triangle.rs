@@ -61,7 +61,8 @@ fn texture_and_triangle() {
             scissor: vust::pipeline::Scissor::Dynamic,
             polygon_mode: vk::PolygonMode::FILL,
             cull_mode: vust::pipeline::CullMode::None,
-            descriptor_set_layout: None
+            descriptor_set_layout: None,
+            enable_depth_test: false
         }
     );
 
@@ -117,7 +118,8 @@ fn texture_and_triangle() {
                         }
                     ]
                 }
-            )
+            ),
+            enable_depth_test: false
         }
     );
 

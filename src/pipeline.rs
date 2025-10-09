@@ -143,8 +143,8 @@ impl GraphicsPipeline {
                 .color_blend_op(vk::BlendOp::ADD)
                 .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
                 .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+                .src_alpha_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
                 .alpha_blend_op(vk::BlendOp::ADD)
                 .build();
             
@@ -152,7 +152,7 @@ impl GraphicsPipeline {
 
             let color_blend_info = vk::PipelineColorBlendStateCreateInfo::builder()
                 .attachments(&attachements)
-                .logic_op_enable(true)
+                .logic_op_enable(false)
                 .logic_op(vk::LogicOp::COPY)
                 .blend_constants([0.0, 0.0, 0.0, 0.0])
                 .build();
@@ -186,7 +186,7 @@ impl GraphicsPipeline {
             let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states).build();
 
             let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
-                .depth_test_enable(true)
+                .depth_test_enable(create_info.enable_depth_test)
                 .depth_write_enable(true)
                 .depth_compare_op(vk::CompareOp::LESS)
                 .depth_bounds_test_enable(false)
@@ -311,7 +311,8 @@ pub struct GraphicsPipelineCreateInfo {
     pub scissor: Scissor,
     pub polygon_mode: vk::PolygonMode,
     pub cull_mode: CullMode,
-    pub descriptor_set_layout: Option<DescriptorSetLayout>
+    pub descriptor_set_layout: Option<DescriptorSetLayout>,
+    pub enable_depth_test: bool
 }
 
 #[derive(Debug, Clone)]

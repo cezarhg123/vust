@@ -70,7 +70,8 @@ fn texture() {
                         }
                     ]
                 }
-            )
+            ),
+            enable_depth_test: false
         }
     );
 

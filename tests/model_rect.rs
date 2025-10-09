@@ -74,7 +74,8 @@ fn model_rect() {
                         }
                     ]
                 }
-            )
+            ),
+            enable_depth_test: false
         }
     );
 
