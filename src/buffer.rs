@@ -25,7 +25,7 @@ impl Buffer {
         }
     }
 
-    pub fn overwrite<T>(&self, data: &[T]) -> Result<(), &str> {
+    pub fn overwrite_all<T>(&self, data: &[T]) -> Result<(), &str> {
         if let Some(memory) = &self.memory {
             if memory.size() < size_of_val(data) as u64 {
                 return Err("data size is bigger than buffer size");
@@ -39,6 +39,22 @@ impl Buffer {
             Err("buffer not created somehow??")
         }
     }
+
+	/// offset is amount of 'T's
+	pub fn overwrite_offset<T>(&self, data: &[T], offset: usize) -> Result<(), &str> {
+		if let Some(memory) = &self.memory {
+			if memory.size() < size_of_val(data) as u64 {
+				return Err("data size is bigger than buffer size");
+			}
+
+			unsafe {
+				memory.mapped_ptr().unwrap().as_ptr().cast::<T>().add(offset).copy_from_nonoverlapping(data.as_ptr(), data.len());
+				Ok(())
+			}
+		} else {
+			Err("buffer not created somehow??")
+		}
+	}
 
     pub fn handle(&self) -> vk::Buffer {
         self.handle

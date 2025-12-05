@@ -1,6 +1,6 @@
 [package]
 name = "vust"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,6 +11,6 @@ gpu-allocator = "0.26.0"
 
 [dev-dependencies]
 winapi = "0.3.9"
+glfw = "0.60.0"
 glm = { version = "0.19.0", package = "nalgebra-glm" }
-glfw = { version = "0.56.0", features = ["vulkan", "ash"] }
 image = "0.25.2"
